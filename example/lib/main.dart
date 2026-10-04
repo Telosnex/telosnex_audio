@@ -96,8 +96,9 @@ class _ExamplePageState extends State<ExamplePage> {
               children: [
                 FilledButton(
                   onPressed: () {
-                    if (s.status == TrackStatus.ended)
+                    if (s.status == TrackStatus.ended) {
                       track.seek(Duration.zero);
+                    }
                     s.isPlaying ? track.pause() : track.play();
                   },
                   child: Text(s.isPlaying ? 'Pause' : 'Play'),

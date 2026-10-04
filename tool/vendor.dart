@@ -152,8 +152,9 @@ Future<void> main(List<String> args) async {
   }
   for (final g in generated) {
     final src = File('$genDir/$g');
-    if (!src.existsSync())
+    if (!src.existsSync()) {
       throw StateError('Generated header missing: ${src.path}');
+    }
     src.copySync(
       (File('${outDir.path}/gen/$g')..parent.createSync(recursive: true)).path,
     );
