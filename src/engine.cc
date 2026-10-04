@@ -1,0 +1,870 @@
+#include "engine.h"
+
+#include <algorithm>
+#include <cerrno>
+#include <cmath>
+#include <cstring>
+#include <filesystem>
+
+#if !defined(_WIN32)
+#include <signal.h>
+#include <unistd.h>
+#endif
+
+#include "alloc_probe.h"
+#include "api/audio/audio_device.h"
+#include "api/audio/audio_frame.h"
+#include "api/audio/audio_mixer.h"
+#include "api/audio/audio_processing.h"
+#include "api/audio/builtin_audio_processing_builder.h"
+#include "api/audio/create_audio_device_module.h"
+#include "api/environment/environment.h"
+#include "api/environment/environment_factory.h"
+#include "block_resampler.h"
+#include "modules/audio_mixer/audio_mixer_impl.h"
+#include "modules/audio_mixer/output_rate_calculator.h"
+
+namespace tsnx {
+
+namespace {
+
+// D3: the mixer always runs at 48 kHz, so the APM render format never
+// follows the sources.
+class Fixed48kRate : public webrtc::OutputRateCalculator {
+ public:
+  int CalculateOutputRateFromRange(
+      webrtc::ArrayView<const int> /*rates*/) override {
+    return Engine::kMixRate;
+  }
+};
+
+int16_t ToS16(float v) {
+  if (v > 32767.f) return 32767;
+  if (v < -32768.f) return -32768;
+  return static_cast<int16_t>(std::lrintf(v));
+}
+
+int SlotOf(int32_t id) { return id % Engine::kMaxTracks; }
+
+}  // namespace
+
+// ---- Device thread ---------------------------------------------------------
+
+class DeviceThread {
+ public:
+  DeviceThread() : thread_([this] { Run(); }) {}
+  ~DeviceThread() {
+    {
+      std::lock_guard<std::mutex> lock(mu_);
+      stop_ = true;
+    }
+    cv_.notify_all();
+    thread_.join();
+  }
+  void Post(std::function<void()> task) {
+    {
+      std::lock_guard<std::mutex> lock(mu_);
+      tasks_.push_back(std::move(task));
+    }
+    cv_.notify_all();
+  }
+  void Invoke(std::function<void()> task) {
+    std::mutex m;
+    std::condition_variable cv;
+    bool done = false;
+    Post([&] {
+      task();
+      std::lock_guard<std::mutex> lock(m);
+      done = true;
+      cv.notify_all();
+    });
+    std::unique_lock<std::mutex> lock(m);
+    cv.wait(lock, [&] { return done; });
+  }
+
+ private:
+  void Run() {
+    for (;;) {
+      std::function<void()> task;
+      {
+        std::unique_lock<std::mutex> lock(mu_);
+        cv_.wait(lock, [&] { return stop_ || !tasks_.empty(); });
+        if (tasks_.empty()) return;
+        task = std::move(tasks_.front());
+        tasks_.pop_front();
+      }
+      task();
+    }
+  }
+  std::mutex mu_;
+  std::condition_variable cv_;
+  std::deque<std::function<void()>> tasks_;
+  bool stop_ = false;
+  std::thread thread_;
+};
+
+// ---- WebRTC objects ---------------------------------------------------------
+
+class EngineTransport : public webrtc::AudioTransport {
+ public:
+  explicit EngineTransport(Engine* e) : e_(e) {}
+  int32_t RecordedDataIsAvailable(const void* audio, size_t samples,
+                                  size_t /*bytes_per_sample*/, size_t channels,
+                                  uint32_t rate, uint32_t total_delay_ms,
+                                  int32_t /*drift*/, uint32_t mic_level,
+                                  bool /*key_pressed*/,
+                                  uint32_t& new_mic_level) override {
+    e_->CaptureBlockIn(static_cast<const int16_t*>(audio), samples, channels,
+                       rate, total_delay_ms);
+    new_mic_level = mic_level;
+    return 0;
+  }
+  int32_t NeedMorePlayData(size_t samples, size_t /*bytes_per_sample*/,
+                           size_t channels, uint32_t rate, void* audio,
+                           size_t& samples_out, int64_t* elapsed_time_ms,
+                           int64_t* ntp_time_ms) override {
+    e_->RenderBlock(static_cast<int16_t*>(audio), samples, channels, rate);
+    samples_out = samples * channels;
+    *elapsed_time_ms = -1;
+    *ntp_time_ms = -1;
+    return 0;
+  }
+  void PullRenderData(int, int, size_t, size_t, void*, int64_t*,
+                      int64_t*) override {}
+
+ private:
+  Engine* e_;
+};
+
+struct EngineWebRtc {
+  webrtc::Environment env = webrtc::CreateEnvironment();
+  webrtc::scoped_refptr<webrtc::AudioProcessing> apm;
+  webrtc::scoped_refptr<webrtc::AudioMixerImpl> mixer;
+  webrtc::scoped_refptr<webrtc::AudioDeviceModule> adm;  // device thread
+  std::unique_ptr<EngineTransport> transport;
+  webrtc::AudioFrame mix_frame;
+};
+
+class PoolSource : public webrtc::AudioMixer::Source {
+ public:
+  PoolSource(Engine* e, int slot) : e_(e), slot_(slot) {}
+  AudioFrameInfo GetAudioFrameWithInfo(int /*rate*/,
+                                       webrtc::AudioFrame* f) override {
+    Track* t = e_->slots_[slot_].load(std::memory_order_acquire);
+    if (!t) return AudioFrameInfo::kMuted;
+    f->UpdateFrame(0, nullptr, Engine::kMixFrames, Engine::kMixRate,
+                   webrtc::AudioFrame::kNormalSpeech,
+                   webrtc::AudioFrame::kVadUnknown, t->channels());
+    int16_t* d = f->mutable_data();
+    if (!t->Render(d, e_->render_now_ns_, e_->render_delay_ns_, *e_)) {
+      f->Mute();
+      return AudioFrameInfo::kMuted;
+    }
+    return AudioFrameInfo::kNormal;
+  }
+  int Ssrc() const override { return slot_; }
+  int PreferredSampleRate() const override { return Engine::kMixRate; }
+
+ private:
+  Engine* e_;
+  int slot_;
+};
+
+// ---- Engine -----------------------------------------------------------------
+
+std::unique_ptr<Engine> Engine::Open(const EngineConfig& config,
+                                     int32_t* error) {
+  std::unique_ptr<Engine> e(new Engine(config));
+  if (!e->Init(error)) return nullptr;
+  return e;
+}
+
+Engine::Engine(const EngineConfig& config) : config_(config) {
+  for (auto& s : slots_) s.store(nullptr);
+}
+
+bool Engine::Init(int32_t* error) {
+  *error = kOk;
+  if (!config_.spill_dir.empty()) {
+    std::error_code ec;
+    std::filesystem::create_directories(config_.spill_dir, ec);
+    CleanStaleSpill();
+#if defined(_WIN32)
+    const long pid = static_cast<long>(GetCurrentProcessId());
+#else
+    const long pid = static_cast<long>(getpid());
+#endif
+    spill_dir_ = config_.spill_dir + "/" + std::to_string(pid);
+    std::filesystem::create_directories(spill_dir_, ec);
+  }
+
+  rtc_ = std::make_unique<EngineWebRtc>();
+  webrtc::AudioProcessing::Config apm;
+  apm.echo_canceller.enabled = config_.echo_cancellation;
+  apm.noise_suppression.enabled = config_.noise_suppression;
+  apm.gain_controller2.enabled = config_.auto_gain;
+  apm.gain_controller2.adaptive_digital.enabled = config_.auto_gain;
+  apm.high_pass_filter.enabled = true;
+  rtc_->apm = webrtc::BuiltinAudioProcessingBuilder(apm).Build(rtc_->env);
+  rtc_->mixer = webrtc::AudioMixerImpl::Create(
+      std::make_unique<Fixed48kRate>(), /*use_limiter=*/true);
+  for (int i = 0; i < kMaxTracks; ++i) {
+    pool_.push_back(std::make_unique<PoolSource>(this, i));
+    rtc_->mixer->AddSource(pool_.back().get());  // D12: once, at start
+  }
+  render_f_in_.reset(new float[kMixFrames * 2]);
+  render_f_out_.reset(new float[kMixFrames * 2]);
+  cap_f_.resize(480 * 2);
+  cap_f48_.resize(kMixFrames);
+  cap_s48_.resize(kMixFrames);
+  cap_fout_.resize(kMixFrames);
+  rtc_->transport = std::make_unique<EngineTransport>(this);
+  WarmUp(config_.manual_device ? std::clamp(config_.manual_output_channels, 1, 2)
+                               : 2);
+
+  if (config_.manual_device) {
+    device_delay_ns_.store(int64_t{config_.manual_delay_ms} * 1000000);
+    return true;
+  }
+
+  device_thread_ = std::make_unique<DeviceThread>();
+  bool ok = false;
+  device_thread_->Invoke([&] {
+    rtc_->adm = webrtc::CreateAudioDeviceModule(
+        rtc_->env, webrtc::AudioDeviceModule::kPlatformDefaultAudio);
+    if (!rtc_->adm || rtc_->adm->Init() != 0) return;
+    rtc_->adm->RegisterAudioCallback(rtc_->transport.get());
+    RefreshDevices();
+    ok = true;
+  });
+  if (!ok) {
+    *error = kErrDevice;
+    device_thread_->Invoke([&] { rtc_->adm = nullptr; });
+    return false;
+  }
+  control_thread_ = std::thread([this] { ControlLoop(); });
+  notifier_thread_ = std::thread([this] { NotifierLoop(); });
+  return true;
+}
+
+Engine::~Engine() {
+  stopping_.store(true);
+  control_wakeup_.Signal();
+  notify_wakeup_.Signal();
+  if (control_thread_.joinable()) control_thread_.join();
+  if (notifier_thread_.joinable()) notifier_thread_.join();
+  if (device_thread_) {
+    device_thread_->Invoke([&] {
+      if (!rtc_->adm) return;
+      if (rtc_->adm->Recording()) rtc_->adm->StopRecording();
+      if (rtc_->adm->Playing()) rtc_->adm->StopPlayout();
+      rtc_->adm->RegisterAudioCallback(nullptr);
+      rtc_->adm->Terminate();
+      rtc_->adm = nullptr;
+    });
+    device_thread_.reset();
+  }
+  for (auto& s : slots_) delete s.exchange(nullptr);
+  retirer_.ReclaimAll();
+  if (!spill_dir_.empty()) {
+    std::error_code ec;
+    std::filesystem::remove_all(spill_dir_, ec);
+  }
+}
+
+void Engine::CleanStaleSpill() {
+  std::error_code ec;
+  for (const auto& entry :
+       std::filesystem::directory_iterator(config_.spill_dir, ec)) {
+    const std::string name = entry.path().filename().string();
+    if (name.empty() ||
+        !std::all_of(name.begin(), name.end(), ::isdigit))
+      continue;
+    const long pid = std::strtol(name.c_str(), nullptr, 10);
+#if !defined(_WIN32)
+    if (pid == static_cast<long>(getpid())) continue;
+    if (kill(static_cast<pid_t>(pid), 0) == 0 || errno == EPERM) continue;
+#endif
+    std::filesystem::remove_all(entry.path(), ec);
+  }
+}
+
+std::string Engine::SpillPath(int32_t id) {
+  if (spill_dir_.empty()) return std::string();
+  return spill_dir_ + "/track_" + std::to_string(id) + ".pcm";
+}
+
+int64_t Engine::NowNs() const {
+  return config_.manual_device ? manual_now_ns_ : MonotonicNowNs();
+}
+
+// ---- Tracks -----------------------------------------------------------------
+
+Track* Engine::Lookup(int32_t id) const {
+  if (id < 0) return nullptr;
+  Track* t = slots_[SlotOf(id)].load(std::memory_order_acquire);
+  return (t && t->id() == id) ? t : nullptr;
+}
+
+int32_t Engine::CreateTrack(int rate, int channels, Retention retention,
+                            int32_t* out_id) {
+  if (rate < 8000 || rate > 48000 || rate % 100 != 0 || channels < 1 ||
+      channels > 2)
+    return kErrUnsupportedFormat;
+  std::lock_guard<std::mutex> lock(tracks_mu_);
+  for (int s = 0; s < kMaxTracks; ++s) {
+    if (slots_[s].load()) continue;
+    const int32_t id = ++gens_[s] * kMaxTracks + s;
+    auto store = std::make_unique<TrackStore>(
+        rate, channels, retention,
+        retention == Retention::kAll ? SpillPath(id) : std::string());
+    slots_[s].store(new Track(id, std::move(store)),
+                    std::memory_order_release);
+    *out_id = id;
+    return kOk;
+  }
+  return kErrNoFreeTrack;
+}
+
+int32_t Engine::CreateMp3Track(const uint8_t* data, size_t size,
+                               int32_t* out_id) {
+  auto store = TrackStore::OpenMp3(data, size);
+  if (!store) return kErrUnsupportedFormat;
+  std::lock_guard<std::mutex> lock(tracks_mu_);
+  for (int s = 0; s < kMaxTracks; ++s) {
+    if (slots_[s].load()) continue;
+    const int32_t id = ++gens_[s] * kMaxTracks + s;
+    slots_[s].store(new Track(id, std::move(store)),
+                    std::memory_order_release);
+    *out_id = id;
+    control_wakeup_.Signal();
+    return kOk;
+  }
+  return kErrNoFreeTrack;
+}
+
+int64_t Engine::Write(int32_t id, const int16_t* pcm, int64_t frames) {
+  Track* t = Lookup(id);
+  if (!t) return kErrNoTrack;
+  return t->store().Write(pcm, frames, t->playhead(), retirer_);
+}
+
+int32_t Engine::EndOfStream(int32_t id) {
+  Track* t = Lookup(id);
+  if (!t) return kErrNoTrack;
+  t->store().EndOfStream();
+  return kOk;
+}
+
+int32_t Engine::Enqueue(const Command& c) {
+  if (!Lookup(c.track_id)) return kErrNoTrack;
+  {
+    std::lock_guard<std::mutex> lock(cmd_mu_);
+    if (!commands_.Push(c)) return kErrQueueFull;
+  }
+  control_wakeup_.Signal();
+  return kOk;
+}
+
+int32_t Engine::Play(int32_t id) { return Enqueue({Command::kPlay, id, 0, 0}); }
+int32_t Engine::Pause(int32_t id) {
+  return Enqueue({Command::kPause, id, 0, 0});
+}
+int32_t Engine::Seek(int32_t id, int64_t frame) {
+  return Enqueue({Command::kSeek, id, frame, 0});
+}
+int32_t Engine::SetRate(int32_t id, double rate) {
+  if (!(rate >= 0.5 && rate <= 3.0)) return kErrInvalidArgument;
+  return Enqueue({Command::kRate, id, 0, rate});
+}
+int32_t Engine::SetGain(int32_t id, double gain, int32_t ramp_ms) {
+  if (!(gain >= 0.0 && gain <= 4.0) || ramp_ms < 0) return kErrInvalidArgument;
+  return Enqueue({Command::kGain, id, ramp_ms, gain});
+}
+int32_t Engine::Flush(int32_t id) {
+  Track* t = Lookup(id);
+  if (!t) return kErrNoTrack;
+  return Enqueue({Command::kFlush, id, t->store().written(), 0});
+}
+
+int32_t Engine::GetState(int32_t id, TrackStateWords* out) {
+  Track* t = Lookup(id);
+  if (!t) return kErrNoTrack;
+  *out = t->State();
+  return kOk;
+}
+
+int32_t Engine::TrackFormat(int32_t id, int32_t* rate, int32_t* channels) {
+  Track* t = Lookup(id);
+  if (!t) return kErrNoTrack;
+  *rate = t->sample_rate();
+  *channels = t->channels();
+  return kOk;
+}
+
+int32_t Engine::DisposeTrack(int32_t id) {
+  std::lock_guard<std::mutex> lock(tracks_mu_);
+  Track* t = Lookup(id);
+  if (!t) return kErrNoTrack;
+  slots_[SlotOf(id)].store(nullptr, std::memory_order_seq_cst);
+  retirer_.Retire([t] { delete t; });
+  if (config_.manual_device) retirer_.Reclaim();
+  return kOk;
+}
+
+void Engine::ApplyCommands() {
+  Command c;
+  bool any = false;
+  while (commands_.Pop(&c)) {
+    any = true;
+    Track* t = slots_[SlotOf(c.track_id)].load(std::memory_order_acquire);
+    if (!t || t->id() != c.track_id) continue;
+    switch (c.kind) {
+      case Command::kPlay:
+        t->Play();
+        break;
+      case Command::kPause:
+        t->Pause();
+        break;
+      case Command::kSeek:
+        t->Seek(c.i);
+        break;
+      case Command::kRate:
+        t->SetRate(c.d);
+        break;
+      case Command::kGain:
+        t->SetGain(c.d, c.i * t->sample_rate() / 1000);
+        break;
+      case Command::kFlush:
+        t->Flush(c.i);
+        break;
+    }
+  }
+  // A seek or flush moves the playhead: let the control thread load the
+  // window now rather than at its next 20 ms tick.
+  if (any) control_wakeup_.Signal();
+}
+
+void Engine::PublishAll(int64_t now_ns) {
+  for (auto& s : slots_) {
+    Track* t = s.load(std::memory_order_acquire);
+    if (t) t->Publish(now_ns, *this);
+  }
+}
+
+void Engine::PushRt(const TrackEvent& e) {
+  if (!rt_events_.Push(e)) rt_events_dropped_.fetch_add(1);
+}
+
+// ---- Render (audio thread) ------------------------------------------------
+
+void Engine::RenderBlock(int16_t* out, size_t frames, size_t channels,
+                         uint32_t rate) {
+  RtScope rt;
+  const size_t samples = frames * channels;
+  if (render_lock_.exchange(true, std::memory_order_acquire)) {
+    std::memset(out, 0, samples * sizeof(int16_t));
+    return;
+  }
+  retirer_.BeginBlock();
+  const int64_t now = NowNs();
+  last_render_ns_.store(now, std::memory_order_relaxed);
+  ApplyCommands();
+
+  const int ch = static_cast<int>(std::clamp<size_t>(channels, 1, 2));
+  if (ch != render_channels_) {
+    render_channels_ = ch;
+    ++render_format_changes_;
+  }
+  render_now_ns_ = now;
+  render_delay_ns_ = device_delay_ns_.load(std::memory_order_relaxed);
+  webrtc::AudioFrame& mix = rtc_->mix_frame;
+  rtc_->mixer->Mix(ch, &mix);
+  const webrtc::StreamConfig rc(kMixRate, ch);
+  // I3: the frame the APM analyzes is the frame the device gets.
+  int16_t* mixed = mix.mutable_data();
+  rtc_->apm->ProcessReverseStream(mixed, rc, rc, mixed);
+  apm_render_rate_ = kMixRate;
+
+  if (rate == static_cast<uint32_t>(kMixRate) && frames == kMixFrames &&
+      static_cast<size_t>(ch) == channels) {
+    std::memcpy(out, mixed, samples * sizeof(int16_t));
+  } else if (rate % 100 == 0 && frames * 100 == rate &&
+             static_cast<size_t>(ch) == channels) {
+    if (!render_resampler_ ||
+        render_resampler_->dst_frames() != static_cast<int>(frames) ||
+        render_resampler_->channels() != ch) {
+      // Device format change: rare, and allocates.
+      render_resampler_ =
+          std::make_unique<BlockResampler>(kMixRate, rate, ch);
+    }
+    for (int i = 0; i < kMixFrames * ch; ++i) render_f_in_[i] = mixed[i];
+    render_resampler_->Process(render_f_in_.get(), render_f_out_.get());
+    for (size_t i = 0; i < samples; ++i) out[i] = ToS16(render_f_out_[i]);
+  } else {
+    std::memset(out, 0, samples * sizeof(int16_t));
+  }
+
+  PublishAll(now);
+  retirer_.EndBlock();
+  render_lock_.store(false, std::memory_order_release);
+  if (rt_events_.Size() > 0) notify_wakeup_.Signal();
+}
+
+// Runs the APM and mixer once on this (non-real-time) thread, so their
+// first-use initialization does not allocate on the audio threads (I1).
+void Engine::WarmUp(int channels) {
+  std::vector<int16_t> zeros(kMixFrames * 2, 0);
+  const webrtc::StreamConfig rc(kMixRate, channels);
+  rtc_->mixer->Mix(channels, &rtc_->mix_frame);
+  rtc_->apm->ProcessReverseStream(zeros.data(), rc, rc, zeros.data());
+  const webrtc::StreamConfig cc(kMixRate, 1);
+  rtc_->apm->set_stream_delay_ms(0);
+  rtc_->apm->ProcessStream(zeros.data(), cc, cc, zeros.data());
+  render_channels_ = channels;
+  render_format_changes_ = 1;
+  capture_in_rate_ = kMixRate;
+  capture_in_rs_ = std::make_unique<BlockResampler>(kMixRate, kMixRate, 1);
+}
+
+// Applies commands and publishes state while no device is rendering, so
+// seek and pause show up in state without output running.
+void Engine::IdleApply() {
+  if (render_lock_.exchange(true, std::memory_order_acquire)) return;
+  retirer_.BeginBlock();
+  ApplyCommands();
+  PublishAll(NowNs());
+  retirer_.EndBlock();
+  render_lock_.store(false, std::memory_order_release);
+  if (rt_events_.Size() > 0) notify_wakeup_.Signal();
+}
+
+// ---- Capture (capture thread) -------------------------------------------
+
+void Engine::CaptureBlockIn(const int16_t* in, size_t frames, size_t channels,
+                            uint32_t rate, uint32_t total_delay_ms) {
+  RtScope rt;
+  if (!capture_active_.load(std::memory_order_acquire)) return;
+  if (rate % 100 != 0 || frames * 100 != rate || channels < 1 ||
+      frames > 480)
+    return;
+  for (size_t i = 0; i < frames; ++i) {
+    float acc = 0;
+    for (size_t c = 0; c < channels; ++c) acc += in[i * channels + c];
+    cap_f_[i] = acc / static_cast<float>(channels);
+  }
+  if (static_cast<int>(rate) != capture_in_rate_) {
+    capture_in_rate_ = static_cast<int>(rate);
+    capture_in_rs_ = std::make_unique<BlockResampler>(rate, kMixRate, 1);
+  }
+  capture_in_rs_->Process(cap_f_.data(), cap_f48_.data());
+  for (int i = 0; i < kMixFrames; ++i) cap_s48_[i] = ToS16(cap_f48_[i]);
+
+  const webrtc::StreamConfig cc(kMixRate, 1);
+  rtc_->apm->set_stream_delay_ms(static_cast<int>(total_delay_ms));
+  rtc_->apm->ProcessStream(cap_s48_.data(), cc, cc, cap_s48_.data());
+
+  const int out_rate = capture_rate_.load(std::memory_order_relaxed);
+  CaptureBlock* b = capture_ring_.Reserve();
+  if (!b) {
+    capture_dropped_.fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  b->t_ns = NowNs();
+  b->rate = out_rate;
+  b->frames = out_rate / 100;
+  if (out_rate == kMixRate) {
+    std::memcpy(b->data, cap_s48_.data(), kMixFrames * sizeof(int16_t));
+  } else {
+    if (out_rate != capture_out_rate_) {
+      capture_out_rate_ = out_rate;
+      capture_out_rs_ = std::make_unique<BlockResampler>(kMixRate, out_rate, 1);
+    }
+    for (int i = 0; i < kMixFrames; ++i) cap_f48_[i] = cap_s48_[i];
+    capture_out_rs_->Process(cap_f48_.data(), cap_fout_.data());
+    for (int i = 0; i < b->frames; ++i) b->data[i] = ToS16(cap_fout_[i]);
+  }
+  capture_ring_.Commit();
+  capture_signal_.store(true, std::memory_order_release);
+  notify_wakeup_.Signal();
+}
+
+int32_t Engine::ReadCapture(CaptureBlock* out, int32_t max_blocks) {
+  int32_t n = 0;
+  while (n < max_blocks && capture_ring_.Pop(&out[n])) ++n;
+  return n;
+}
+
+double Engine::EchoReturnLossEnhancement() const {
+  const auto stats = rtc_->apm->GetStatistics();
+  return stats.echo_return_loss_enhancement.value_or(NAN);
+}
+
+// ---- Capture control and devices -----------------------------------------
+
+int32_t Engine::StartCapture(int32_t rate, int32_t request_id) {
+  if (rate < 8000 || rate > 48000 || rate % 100 != 0)
+    return kErrInvalidArgument;
+  capture_rate_.store(rate);
+  if (config_.manual_device) {
+    capture_active_.store(true);
+    Notify(static_cast<int32_t>(NotifyKind::kRequestDone), request_id, kOk);
+    NotifierPass();
+    return kOk;
+  }
+  device_thread_->Post([this, request_id] {
+    int32_t result = kOk;
+    auto& adm = rtc_->adm;
+    if (!adm->Recording()) {
+      if (adm->SetRecordingDevice(selected_input_) != 0 ||
+          adm->InitRecording() != 0 || adm->StartRecording() != 0)
+        result = kErrDevice;
+    }
+    capture_active_.store(result == kOk);
+    Notify(static_cast<int32_t>(NotifyKind::kRequestDone), request_id, result);
+    control_wakeup_.Signal();
+  });
+  return kOk;
+}
+
+int32_t Engine::StopCapture(int32_t request_id) {
+  capture_active_.store(false);
+  if (config_.manual_device) {
+    Notify(static_cast<int32_t>(NotifyKind::kRequestDone), request_id, kOk);
+    NotifierPass();
+    return kOk;
+  }
+  device_thread_->Post([this, request_id] {
+    if (rtc_->adm->Recording()) rtc_->adm->StopRecording();
+    Notify(static_cast<int32_t>(NotifyKind::kRequestDone), request_id, kOk);
+  });
+  return kOk;
+}
+
+void Engine::RefreshDevices() {
+  auto& adm = rtc_->adm;
+  std::vector<DeviceInfo> outs, ins;
+  char name[webrtc::kAdmMaxDeviceNameSize];
+  char guid[webrtc::kAdmMaxGuidSize];
+  for (int i = 0; i < adm->PlayoutDevices(); ++i) {
+    if (adm->PlayoutDeviceName(i, name, guid) == 0)
+      outs.push_back({guid[0] ? guid : std::to_string(i), name});
+  }
+  for (int i = 0; i < adm->RecordingDevices(); ++i) {
+    if (adm->RecordingDeviceName(i, name, guid) == 0)
+      ins.push_back({guid[0] ? guid : std::to_string(i), name});
+  }
+  bool changed = false;
+  {
+    std::lock_guard<std::mutex> lock(devices_mu_);
+    auto same = [](const std::vector<DeviceInfo>& a,
+                   const std::vector<DeviceInfo>& b) {
+      if (a.size() != b.size()) return false;
+      for (size_t i = 0; i < a.size(); ++i)
+        if (a[i].id != b[i].id || a[i].name != b[i].name) return false;
+      return true;
+    };
+    changed = !same(outs, outputs_) || !same(ins, inputs_);
+    outputs_ = std::move(outs);
+    inputs_ = std::move(ins);
+  }
+  if (changed)
+    Notify(static_cast<int32_t>(NotifyKind::kDevicesChanged), 0, 0);
+}
+
+std::vector<DeviceInfo> Engine::Devices(bool input) {
+  std::lock_guard<std::mutex> lock(devices_mu_);
+  return input ? inputs_ : outputs_;
+}
+
+int32_t Engine::SelectOutput(const std::string& id, int32_t request_id) {
+  if (config_.manual_device) {
+    Notify(static_cast<int32_t>(NotifyKind::kRequestDone), request_id, kOk);
+    NotifierPass();
+    return kOk;
+  }
+  device_thread_->Post([this, id, request_id] {
+    int index = -1;
+    {
+      std::lock_guard<std::mutex> lock(devices_mu_);
+      for (size_t i = 0; i < outputs_.size(); ++i)
+        if (outputs_[i].id == id) index = static_cast<int>(i);
+    }
+    int32_t result = kOk;
+    if (index < 0) {
+      result = kErrInvalidArgument;
+    } else {
+      auto& adm = rtc_->adm;
+      const bool was_playing = adm->Playing();
+      if (was_playing) adm->StopPlayout();
+      selected_output_ = index;
+      if (adm->SetPlayoutDevice(index) != 0) result = kErrDevice;
+      if (was_playing &&
+          (adm->InitPlayout() != 0 || adm->StartPlayout() != 0)) {
+        result = kErrDevice;
+        playout_running_.store(false);
+      }
+    }
+    Notify(static_cast<int32_t>(NotifyKind::kRequestDone), request_id, result);
+  });
+  return kOk;
+}
+
+int32_t Engine::SelectInput(const std::string& id, int32_t request_id) {
+  if (config_.manual_device) {
+    Notify(static_cast<int32_t>(NotifyKind::kRequestDone), request_id, kOk);
+    NotifierPass();
+    return kOk;
+  }
+  device_thread_->Post([this, id, request_id] {
+    int index = -1;
+    {
+      std::lock_guard<std::mutex> lock(devices_mu_);
+      for (size_t i = 0; i < inputs_.size(); ++i)
+        if (inputs_[i].id == id) index = static_cast<int>(i);
+    }
+    int32_t result = kOk;
+    if (index < 0) {
+      result = kErrInvalidArgument;
+    } else {
+      auto& adm = rtc_->adm;
+      const bool was_recording = adm->Recording();
+      if (was_recording) adm->StopRecording();
+      selected_input_ = index;
+      if (adm->SetRecordingDevice(index) != 0) result = kErrDevice;
+      if (was_recording &&
+          (adm->InitRecording() != 0 || adm->StartRecording() != 0))
+        result = kErrDevice;
+    }
+    Notify(static_cast<int32_t>(NotifyKind::kRequestDone), request_id, result);
+  });
+  return kOk;
+}
+
+// ---- Control and notifier threads ---------------------------------------
+
+void Engine::Notify(int32_t kind, int32_t id, int64_t value) {
+  {
+    std::lock_guard<std::mutex> lock(events_mu_);
+    events_.push_back({kind, id, value});
+  }
+  notify_wakeup_.Signal();
+}
+
+void Engine::ControlPass() {
+  {
+    std::lock_guard<std::mutex> lock(tracks_mu_);
+    for (auto& s : slots_) {
+      Track* t = s.load(std::memory_order_acquire);
+      if (t) t->store().Maintain(t->playhead(), retirer_);
+    }
+  }
+  retirer_.Reclaim();
+}
+
+void Engine::UpdatePlayoutDemand() {
+  const int64_t now = MonotonicNowNs();
+  bool demand = capture_active_.load();
+  for (auto& s : slots_) {
+    Track* t = s.load(std::memory_order_acquire);
+    if (t && t->wants_output()) demand = true;
+  }
+  // A queued play() has not reached the track yet.
+  if (commands_.Size() > 0) demand = true;
+  if (demand) idle_since_ns_ = 0;
+  const bool running = playout_running_.load();
+  if (demand && !running && !playout_pending_.exchange(true)) {
+    device_thread_->Post([this] {
+      auto& adm = rtc_->adm;
+      int32_t ok = adm->SetPlayoutDevice(selected_output_) == 0 &&
+                   adm->InitPlayout() == 0 && adm->StartPlayout() == 0;
+      playout_running_.store(ok);
+      playout_pending_.store(false);
+      if (!ok)
+        Notify(static_cast<int32_t>(NotifyKind::kEngineError), 0, kErrDevice);
+      Notify(static_cast<int32_t>(NotifyKind::kOutputState), 0, ok);
+    });
+  } else if (!demand && running) {
+    if (idle_since_ns_ == 0) idle_since_ns_ = now;
+    if (now - idle_since_ns_ >
+            static_cast<int64_t>(config_.idle_stop_seconds * 1e9) &&
+        !playout_pending_.exchange(true)) {
+      idle_since_ns_ = 0;
+      device_thread_->Post([this] {
+        if (rtc_->adm->Playing()) rtc_->adm->StopPlayout();
+        playout_running_.store(false);
+        playout_pending_.store(false);
+        Notify(static_cast<int32_t>(NotifyKind::kOutputState), 0, 0);
+      });
+    }
+  }
+  if (running && now - last_delay_poll_ns_ > 250'000'000) {
+    last_delay_poll_ns_ = now;
+    device_thread_->Post([this] {
+      uint16_t ms = 0;
+      if (rtc_->adm->PlayoutDelay(&ms) == 0)
+        device_delay_ns_.store(int64_t{ms} * 1000000);
+    });
+  }
+  if (now - last_device_poll_ns_ > 2'000'000'000) {
+    last_device_poll_ns_ = now;
+    device_thread_->Post([this] { RefreshDevices(); });
+  }
+}
+
+void Engine::ControlLoop() {
+  while (!stopping_.load()) {
+    control_wakeup_.Wait(20);
+    if (stopping_.load()) break;
+    ControlPass();
+    UpdatePlayoutDemand();
+    // No render in the last 50 ms: apply commands here.
+    if (MonotonicNowNs() - last_render_ns_.load() > 50'000'000) IdleApply();
+  }
+}
+
+void Engine::NotifierPass() {
+  NotifyFn fn = config_.notify;
+  TrackEvent e;
+  while (rt_events_.Pop(&e))
+    if (fn) fn(e.kind, e.track_id, e.value);
+  std::deque<TrackEvent> pending;
+  {
+    std::lock_guard<std::mutex> lock(events_mu_);
+    pending.swap(events_);
+  }
+  for (const auto& p : pending)
+    if (fn) fn(p.kind, p.track_id, p.value);
+  if (capture_signal_.exchange(false) && fn)
+    fn(static_cast<int32_t>(NotifyKind::kCaptureReady), 0,
+       static_cast<int64_t>(capture_ring_.Size()));
+}
+
+void Engine::NotifierLoop() {
+  while (!stopping_.load()) {
+    notify_wakeup_.Wait(50);
+    NotifierPass();
+  }
+}
+
+// ---- Manual device --------------------------------------------------------
+
+int32_t Engine::ManualRender(int32_t blocks, int16_t* out,
+                             const int16_t* capture_in) {
+  if (!config_.manual_device || blocks < 0) return kErrInvalidArgument;
+  const int ch = std::clamp(config_.manual_output_channels, 1, 2);
+  for (int32_t b = 0; b < blocks; ++b) {
+    ControlPass();
+    RenderBlock(out + static_cast<size_t>(b) * kMixFrames * ch, kMixFrames,
+                ch, kMixRate);
+    if (capture_in)
+      CaptureBlockIn(capture_in + static_cast<size_t>(b) * kMixFrames,
+                     kMixFrames, 1, kMixRate, config_.manual_delay_ms);
+    manual_now_ns_ += 10'000'000;
+  }
+  ControlPass();
+  NotifierPass();
+  return kOk;
+}
+
+}  // namespace tsnx

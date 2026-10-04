@@ -18,3 +18,18 @@
 int tsnx_sonic_pending_input_frames(sonicStream s) {
   return s->numInputSamples + s->numPitchSamples;
 }
+
+/* Drops all buffered audio without allocating. The next input starts clean
+ * (ADR I5). */
+void tsnx_sonic_reset(sonicStream s) {
+  s->numInputSamples = 0;
+  s->numOutputSamples = 0;
+  s->numPitchSamples = 0;
+  s->remainingInputToCopy = 0;
+  s->inputPlayTime = 0.0f;
+  s->timeError = 0.0f;
+  s->oldRatePosition = 0;
+  s->newRatePosition = 0;
+  s->prevPeriod = 0;
+  s->prevMinDiff = 0;
+}

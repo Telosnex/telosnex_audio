@@ -102,7 +102,7 @@ set(TSNX_WARN_OFF -w)
 
 # ---- Vendored WebRTC ------------------------------------------------------
 add_library(tsnx_webrtc STATIC ${TSNX_WEBRTC_SOURCES})
-target_include_directories(tsnx_webrtc PUBLIC ${TSNX_INCLUDES})
+target_include_directories(tsnx_webrtc SYSTEM PUBLIC ${TSNX_INCLUDES})
 target_compile_definitions(tsnx_webrtc PUBLIC ${TSNX_DEFINES})
 target_compile_options(tsnx_webrtc PRIVATE ${TSNX_WARN_OFF}
   $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:-fno-exceptions>
@@ -113,7 +113,7 @@ target_link_libraries(tsnx_webrtc PUBLIC ${TSNX_LINK_LIBS})
 add_library(tsnx_thirdparty STATIC
   src/third_party_impl/sonic_impl.c
   src/third_party_impl/minimp3_impl.c)
-target_include_directories(tsnx_thirdparty PUBLIC
+target_include_directories(tsnx_thirdparty SYSTEM PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sonic
   ${CMAKE_CURRENT_SOURCE_DIR}/third_party/minimp3
   ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -125,6 +125,7 @@ endif()
 # ---- Core -----------------------------------------------------------------
 file(GLOB TSNX_CORE_SOURCES CONFIGURE_DEPENDS
   ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cc
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/util/*.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/src/clock/*.cc)
 if(APPLE)
   file(GLOB TSNX_CORE_APPLE CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/apple/*.mm)
@@ -139,7 +140,7 @@ if(TSNX_BUILD_TESTS)
   target_compile_definitions(tsnx_core PUBLIC TSNX_ALLOC_PROBE=1)
 endif()
 
-add_library(telosnex_audio SHARED src/export/exports.cc)
+add_library(telosnex_audio SHARED src/export/c_api.cc src/export/version.cc)
 target_link_libraries(telosnex_audio PRIVATE tsnx_core)
 if(APPLE)
   target_link_options(telosnex_audio PRIVATE
