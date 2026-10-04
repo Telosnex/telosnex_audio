@@ -32,7 +32,9 @@
 
 namespace tsnx {
 
+class AudioClockCorrection;
 class BlockResampler;
+class DriftServo;
 class DeviceThread;
 class PoolSource;
 struct EngineWebRtc;
@@ -58,6 +60,13 @@ struct EngineConfig {
   bool echo_cancellation = true;
   bool noise_suppression = true;
   bool auto_gain = true;
+  // macOS: use AVAudioEngine with Apple voice processing (the fork's macOS
+  // device) instead of the CoreAudio device with AEC3. The APM echo
+  // canceller is then off (Apple's runs instead).
+  bool platform_voice_processing = false;
+  // Capture clock correction (ported from the fork): 0 off, 1 observe,
+  // 2 control. Frozen when capture first starts.
+  int clock_correction = 0;
   // Seconds of idle output before the output device stops (platform only).
   double idle_stop_seconds = 3.0;
 };
@@ -135,12 +144,17 @@ class Engine : public EventSink {
   int64_t render_format_changes() const { return render_format_changes_; }
   int64_t apm_render_rate() const { return apm_render_rate_; }
   double EchoReturnLossEnhancement() const;
+  // Sum of squared samples before and after the APM since the last call.
+  void TakeCaptureEnergy(double* pre, double* post, int64_t* blocks);
+  int64_t device_delay_ms() const { return device_delay_ns_.load() / 1000000; }
 
   // ---- Device callbacks (audio threads) ----
   void RenderBlock(int16_t* out, size_t frames, size_t channels,
                    uint32_t rate);
   void CaptureBlockIn(const int16_t* in, size_t frames, size_t channels,
                       uint32_t rate, uint32_t total_delay_ms);
+  // Clock-correction state for diagnostics.
+  int32_t ClockCorrectionState(double* applied_ppm, bool* engaged);
 
   // EventSink (audio thread).
   void PushRt(const TrackEvent& e) override;
@@ -204,6 +218,16 @@ class Engine : public EventSink {
   std::atomic<int64_t> last_render_ns_{0};
   int64_t manual_now_ns_ = 0;
 
+  void ProcessCapture(const int16_t* in, size_t frames, size_t channels,
+                      uint32_t rate, uint32_t total_delay_ms);
+
+  // Clock correction. The servo pointer is fixed once capture starts.
+  std::shared_ptr<AudioClockCorrection> clock_;
+  std::shared_ptr<DriftServo> servo_hold_;
+  std::atomic<DriftServo*> servo_{nullptr};
+  std::atomic<bool> servo_observe_only_{false};
+  std::vector<int16_t> servo_block_;
+
   // Capture state (capture thread).
   std::atomic<bool> capture_active_{false};
   std::atomic<int32_t> capture_rate_{48000};
@@ -218,6 +242,9 @@ class Engine : public EventSink {
   SpscRing<CaptureBlock> capture_ring_{256};
   std::atomic<int32_t> capture_dropped_{0};
   std::atomic<bool> capture_signal_{false};
+  std::atomic<double> cap_energy_pre_{0};
+  std::atomic<double> cap_energy_post_{0};
+  std::atomic<int64_t> cap_energy_blocks_{0};
 
   // Threads.
   std::atomic<bool> stopping_{false};

@@ -45,6 +45,8 @@ TSNX_EXPORT int32_t tsnx_engine_open(const tsnx_engine_config* c,
   config.echo_cancellation = c->echo_cancellation != 0;
   config.noise_suppression = c->noise_suppression != 0;
   config.auto_gain = c->auto_gain != 0;
+  config.platform_voice_processing = c->platform_voice_processing != 0;
+  config.clock_correction = c->clock_correction;
   if (c->spill_dir) config.spill_dir = c->spill_dir;
   config.notify = c->notify;
   int32_t error = 0;
@@ -73,6 +75,28 @@ TSNX_EXPORT double tsnx_engine_erle_db(tsnx_engine* e) {
 
 TSNX_EXPORT int64_t tsnx_engine_render_format_changes(tsnx_engine* e) {
   return E(e) ? E(e)->render_format_changes() : -1;
+}
+
+TSNX_EXPORT int64_t tsnx_engine_take_capture_energy(tsnx_engine* e,
+                                                    double* pre_apm,
+                                                    double* post_apm) {
+  if (!E(e) || !pre_apm || !post_apm) return TSNX_ERR_INVALID_ARGUMENT;
+  int64_t blocks = 0;
+  E(e)->TakeCaptureEnergy(pre_apm, post_apm, &blocks);
+  return blocks;
+}
+
+TSNX_EXPORT int32_t tsnx_engine_output_delay_ms(tsnx_engine* e) {
+  return E(e) ? static_cast<int32_t>(E(e)->device_delay_ms()) : 0;
+}
+
+TSNX_EXPORT int32_t tsnx_engine_clock_state(tsnx_engine* e, double* applied_ppm,
+                                            int32_t* engaged) {
+  if (!E(e) || !applied_ppm || !engaged) return TSNX_ERR_INVALID_ARGUMENT;
+  bool on = false;
+  const int32_t mode = E(e)->ClockCorrectionState(applied_ppm, &on);
+  *engaged = on;
+  return mode;
 }
 
 TSNX_EXPORT int32_t tsnx_track_create(tsnx_engine* e, int32_t rate,

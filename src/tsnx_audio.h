@@ -58,6 +58,8 @@ typedef struct {
   int32_t echo_cancellation;       // 1 on
   int32_t noise_suppression;
   int32_t auto_gain;
+  int32_t platform_voice_processing;  // macOS: Apple voice processing
+  int32_t clock_correction;  // 0 off, 1 observe, 2 control (fork port)
   const char* spill_dir;           // UTF-8; may be null (no spill)
   tsnx_notify_fn notify;
 } tsnx_engine_config;
@@ -91,6 +93,16 @@ TSNX_EXPORT int32_t tsnx_engine_manual_render(tsnx_engine* e, int32_t blocks,
                                               const int16_t* capture_in);
 TSNX_EXPORT double tsnx_engine_erle_db(tsnx_engine* e);
 TSNX_EXPORT int64_t tsnx_engine_render_format_changes(tsnx_engine* e);
+// Diagnostics: capture energy (sum of squares, 48 kHz mono) before and after
+// the APM since the last call, and the device output delay.
+TSNX_EXPORT int64_t tsnx_engine_take_capture_energy(tsnx_engine* e,
+                                                    double* pre_apm,
+                                                    double* post_apm);
+TSNX_EXPORT int32_t tsnx_engine_output_delay_ms(tsnx_engine* e);
+// Clock correction: returns the mode (0 off, 1 observe, 2 control, 3 legacy);
+// `engaged` is 1 while the capture resampler is active.
+TSNX_EXPORT int32_t tsnx_engine_clock_state(tsnx_engine* e, double* applied_ppm,
+                                            int32_t* engaged);
 
 TSNX_EXPORT int32_t tsnx_track_create(tsnx_engine* e, int32_t rate,
                                       int32_t channels, int32_t retention,

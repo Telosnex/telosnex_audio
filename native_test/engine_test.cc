@@ -141,3 +141,29 @@ TEST(EngineRenderFormatFixedAndEchoSuppressed) {
   CHECK(after > before - 6);
   CHECK(worst > 12);
 }
+
+// Clock correction (fork port) is wired into the capture path: a capture
+// clock 2000 ppm slow engages the servo in control mode.
+TEST(EngineClockCorrectionEngagesOnDrift) {
+  Harness h(0, 1, nullptr, true, false, false, /*clock=*/2);
+  CHECK_EQ(tsnx_capture_start(h.e, 48000, 1), 0);
+  std::vector<int16_t> cap(480);
+  std::vector<int16_t> out(480);
+  tsnx_capture_block blocks[16];
+  for (int b = 0; b < 6000; ++b) {
+    for (int i = 0; i < 480; ++i)
+      cap[i] = static_cast<int16_t>(3000 * std::sin(0.05 * (b * 480 + i)));
+    // Every 500th block the capture device delivers nothing.
+    CHECK_EQ(tsnx_engine_manual_render(h.e, 1, out.data(),
+                                       b % 500 == 499 ? nullptr : cap.data()),
+             0);
+    while (tsnx_capture_read(h.e, blocks, 16) > 0) {
+    }
+  }
+  double ppm = 0;
+  int32_t engaged = 0;
+  CHECK_EQ(tsnx_engine_clock_state(h.e, &ppm, &engaged), 2);
+  std::fprintf(stderr, "  applied %.0f ppm, engaged %d\n", ppm, engaged);
+  CHECK(engaged == 1);
+  CHECK(std::abs(std::abs(ppm) - 2000) < 400);
+}

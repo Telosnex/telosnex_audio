@@ -21,8 +21,13 @@
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
 #include "block_resampler.h"
+#include "clock/audio_clock_correction.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
+#if defined(__APPLE__)
+#include "apple/apple_devices.h"
+#endif
 #include "modules/audio_mixer/output_rate_calculator.h"
+#include "rtc_base/thread.h"
 
 namespace tsnx {
 
@@ -50,57 +55,22 @@ int SlotOf(int32_t id) { return id % Engine::kMaxTracks; }
 
 // ---- Device thread ---------------------------------------------------------
 
+// A webrtc::Thread: AudioEngineDevice posts tasks to the thread that
+// created it, so the device thread must run a WebRTC task loop.
 class DeviceThread {
  public:
-  DeviceThread() : thread_([this] { Run(); }) {}
-  ~DeviceThread() {
-    {
-      std::lock_guard<std::mutex> lock(mu_);
-      stop_ = true;
-    }
-    cv_.notify_all();
-    thread_.join();
+  DeviceThread() : thread_(webrtc::Thread::Create()) {
+    thread_->SetName("tsnx_device", nullptr);
+    thread_->Start();
   }
+  ~DeviceThread() { thread_->Stop(); }
   void Post(std::function<void()> task) {
-    {
-      std::lock_guard<std::mutex> lock(mu_);
-      tasks_.push_back(std::move(task));
-    }
-    cv_.notify_all();
+    thread_->PostTask([task = std::move(task)] { task(); });
   }
-  void Invoke(std::function<void()> task) {
-    std::mutex m;
-    std::condition_variable cv;
-    bool done = false;
-    Post([&] {
-      task();
-      std::lock_guard<std::mutex> lock(m);
-      done = true;
-      cv.notify_all();
-    });
-    std::unique_lock<std::mutex> lock(m);
-    cv.wait(lock, [&] { return done; });
-  }
+  void Invoke(std::function<void()> task) { thread_->BlockingCall(task); }
 
  private:
-  void Run() {
-    for (;;) {
-      std::function<void()> task;
-      {
-        std::unique_lock<std::mutex> lock(mu_);
-        cv_.wait(lock, [&] { return stop_ || !tasks_.empty(); });
-        if (tasks_.empty()) return;
-        task = std::move(tasks_.front());
-        tasks_.pop_front();
-      }
-      task();
-    }
-  }
-  std::mutex mu_;
-  std::condition_variable cv_;
-  std::deque<std::function<void()>> tasks_;
-  bool stop_ = false;
-  std::thread thread_;
+  std::unique_ptr<webrtc::Thread> thread_;
 };
 
 // ---- WebRTC objects ---------------------------------------------------------
@@ -200,7 +170,8 @@ bool Engine::Init(int32_t* error) {
 
   rtc_ = std::make_unique<EngineWebRtc>();
   webrtc::AudioProcessing::Config apm;
-  apm.echo_canceller.enabled = config_.echo_cancellation;
+  apm.echo_canceller.enabled =
+      config_.echo_cancellation && !config_.platform_voice_processing;
   apm.noise_suppression.enabled = config_.noise_suppression;
   apm.gain_controller2.enabled = config_.auto_gain;
   apm.gain_controller2.adaptive_digital.enabled = config_.auto_gain;
@@ -219,6 +190,13 @@ bool Engine::Init(int32_t* error) {
   cap_s48_.resize(kMixFrames);
   cap_fout_.resize(kMixFrames);
   rtc_->transport = std::make_unique<EngineTransport>(this);
+  // Clock correction (fork port). A hardware clock producer exists only for
+  // ALSA (workplan step 7); the callback estimator works everywhere.
+  clock_ = std::make_shared<AudioClockCorrection>(/*supported=*/true);
+  if (config_.clock_correction > 0)
+    clock_->Configure(
+        static_cast<AudioClockCorrectionMode>(config_.clock_correction));
+  servo_block_.resize(480 * 2);
   WarmUp(config_.manual_device ? std::clamp(config_.manual_output_channels, 1, 2)
                                : 2);
 
@@ -230,8 +208,13 @@ bool Engine::Init(int32_t* error) {
   device_thread_ = std::make_unique<DeviceThread>();
   bool ok = false;
   device_thread_->Invoke([&] {
-    rtc_->adm = webrtc::CreateAudioDeviceModule(
-        rtc_->env, webrtc::AudioDeviceModule::kPlatformDefaultAudio);
+#if defined(__APPLE__)
+    if (config_.platform_voice_processing)
+      rtc_->adm = CreateAppleVoiceProcessingAdm(rtc_->env);
+#endif
+    if (!rtc_->adm)
+      rtc_->adm = webrtc::CreateAudioDeviceModule(
+          rtc_->env, webrtc::AudioDeviceModule::kPlatformDefaultAudio);
     if (!rtc_->adm || rtc_->adm->Init() != 0) return;
     rtc_->adm->RegisterAudioCallback(rtc_->transport.get());
     RefreshDevices();
@@ -505,6 +488,8 @@ void Engine::RenderBlock(int16_t* out, size_t frames, size_t channels,
     std::memset(out, 0, samples * sizeof(int16_t));
   }
 
+  if (DriftServo* servo = servo_.load(std::memory_order_acquire))
+    servo->OnRenderFrames(frames, rate);
   PublishAll(now);
   retirer_.EndBlock();
   render_lock_.store(false, std::memory_order_release);
@@ -545,6 +530,33 @@ void Engine::CaptureBlockIn(const int16_t* in, size_t frames, size_t channels,
                             uint32_t rate, uint32_t total_delay_ms) {
   RtScope rt;
   if (!capture_active_.load(std::memory_order_acquire)) return;
+  DriftServo* servo = servo_.load(std::memory_order_acquire);
+  if (servo && channels <= 2) {
+    const bool observe = servo_observe_only_.load(std::memory_order_relaxed);
+    const size_t blocks = servo->PushCaptureAndCorrect(in, frames, rate,
+                                                       channels, !observe);
+    if (!observe && servo->engaged()) {
+      const size_t block_frames = rate / 100;
+      for (size_t i = 0; i < blocks; ++i) {
+        if (!servo->PopBlock(servo_block_.data(), block_frames)) break;
+        ProcessCapture(servo_block_.data(), block_frames, channels, rate,
+                       total_delay_ms);
+      }
+      return;
+    }
+  }
+  ProcessCapture(in, frames, channels, rate, total_delay_ms);
+}
+
+int32_t Engine::ClockCorrectionState(double* applied_ppm, bool* engaged) {
+  const auto st = clock_->GetState();
+  *applied_ppm = st.applied_ppm;
+  *engaged = st.engaged;
+  return st.mode;
+}
+
+void Engine::ProcessCapture(const int16_t* in, size_t frames, size_t channels,
+                            uint32_t rate, uint32_t total_delay_ms) {
   if (rate % 100 != 0 || frames * 100 != rate || channels < 1 ||
       frames > 480)
     return;
@@ -561,8 +573,16 @@ void Engine::CaptureBlockIn(const int16_t* in, size_t frames, size_t channels,
   for (int i = 0; i < kMixFrames; ++i) cap_s48_[i] = ToS16(cap_f48_[i]);
 
   const webrtc::StreamConfig cc(kMixRate, 1);
+  double pre = 0, post = 0;
+  for (int i = 0; i < kMixFrames; ++i)
+    pre += static_cast<double>(cap_s48_[i]) * cap_s48_[i];
   rtc_->apm->set_stream_delay_ms(static_cast<int>(total_delay_ms));
   rtc_->apm->ProcessStream(cap_s48_.data(), cc, cc, cap_s48_.data());
+  for (int i = 0; i < kMixFrames; ++i)
+    post += static_cast<double>(cap_s48_[i]) * cap_s48_[i];
+  cap_energy_pre_.fetch_add(pre, std::memory_order_relaxed);
+  cap_energy_post_.fetch_add(post, std::memory_order_relaxed);
+  cap_energy_blocks_.fetch_add(1, std::memory_order_relaxed);
 
   const int out_rate = capture_rate_.load(std::memory_order_relaxed);
   CaptureBlock* b = capture_ring_.Reserve();
@@ -595,6 +615,12 @@ int32_t Engine::ReadCapture(CaptureBlock* out, int32_t max_blocks) {
   return n;
 }
 
+void Engine::TakeCaptureEnergy(double* pre, double* post, int64_t* blocks) {
+  *pre = cap_energy_pre_.exchange(0);
+  *post = cap_energy_post_.exchange(0);
+  *blocks = cap_energy_blocks_.exchange(0);
+}
+
 double Engine::EchoReturnLossEnhancement() const {
   const auto stats = rtc_->apm->GetStatistics();
   return stats.echo_return_loss_enhancement.value_or(NAN);
@@ -606,6 +632,12 @@ int32_t Engine::StartCapture(int32_t rate, int32_t request_id) {
   if (rate < 8000 || rate > 48000 || rate % 100 != 0)
     return kErrInvalidArgument;
   capture_rate_.store(rate);
+  if (!servo_hold_) {
+    auto snapshot = clock_->Read(/*capture=*/true);
+    servo_hold_ = snapshot.servo;
+    servo_observe_only_.store(snapshot.observe_only);
+    servo_.store(servo_hold_.get(), std::memory_order_release);
+  }
   if (config_.manual_device) {
     capture_active_.store(true);
     Notify(static_cast<int32_t>(NotifyKind::kRequestDone), request_id, kOk);

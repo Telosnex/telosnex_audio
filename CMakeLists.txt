@@ -154,6 +154,11 @@ endif()
 if(TSNX_BUILD_PROBE)
   add_executable(engine_probe native_test/engine_probe.cc)
   target_link_libraries(engine_probe PRIVATE tsnx_webrtc)
+  add_executable(echo_probe native_test/echo_probe.cc)
+  target_link_libraries(echo_probe PRIVATE telosnex_audio)
+  target_include_directories(echo_probe PRIVATE src)
+  target_compile_definitions(echo_probe PRIVATE
+    TSNX_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/native_test/fixtures")
 endif()
 
 if(TSNX_BUILD_TESTS)

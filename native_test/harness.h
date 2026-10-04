@@ -38,7 +38,7 @@ inline void OnNotify(int32_t kind, int32_t id, int64_t value) {
 struct Harness {
   explicit Harness(int delay_ms = 0, int channels = 1,
                    const char* spill_dir = nullptr, bool aec = true,
-                   bool ns = false, bool agc = false)
+                   bool ns = false, bool agc = false, int clock = 0)
       : channels(channels) {
     Events().clear();
     BlockCounter() = 0;
@@ -50,6 +50,7 @@ struct Harness {
     c.noise_suppression = ns;
     c.auto_gain = agc;
     c.spill_dir = spill_dir;
+    c.clock_correction = clock;
     c.notify = &OnNotify;
     CHECK_EQ(tsnx_engine_open(&c, &e), 0);
   }
