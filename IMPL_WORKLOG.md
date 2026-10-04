@@ -22,3 +22,10 @@ Scope of this session: workplan steps 1-6.
   reverted: deleted the branch ref, logs, COMMIT_EDITMSG, the new 2.2 GB pack, the 9381 loose objects born
   after 14:50, and the index (which now referenced deleted objects). The earlier index content is lost.
   201 older loose objects got a new mtime.
+- Step 3: macOS engine on the CoreAudio ADM + AEC3 (default) or AVAudioEngine + Apple VP (option).
+  Real-speaker echo test (native_test/echo_probe.cc, MacBook Pro speakers at 44% volume, built-in mic,
+  speech fixture at gain 0.5, NS on): residual after APM mean ~19 dB vs Apple VP path (the fork's macOS
+  device) ~22 dB; mic level 56 dB. I2 test passes (format changes = 1; suppression 47.7/53.0/47.2 dB).
+  Clock correction ported (src/clock) with fork tests; engine test engages at -2197 ppm for a 2000 ppm drift.
+- Step 4: I1 (0 allocations after warm-up), I4 (p95 12.0 ms), I5, I6, I7, I11 tests pass. TSAN clean
+  incl. a concurrent render/control test. I3 holds by construction (ProcessReverseStream on the device frame).
