@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
   for (int k = 0; k < 2; ++k)
     for (int i = 0; i < tsnx_device_count(e, k); ++i)
       if (tsnx_device_get(e, k, i, id, sizeof id, name, sizeof name) == 0)
-        std::fprintf(stderr, "%s[%d] %s\n", k ? "in" : "out", i, name);
+        std::fprintf(stderr, "%s[%d] %s (id %s)\n", k ? "in" : "out", i, name, id);
 
   tsnx_capture_start(e, 48000, 1);
   std::this_thread::sleep_for(std::chrono::milliseconds(1500));
