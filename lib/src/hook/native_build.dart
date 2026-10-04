@@ -45,7 +45,9 @@ Future<void> buildNative(BuildInput input, BuildOutputBuilder output) async {
   if (mode != 'source') {
     lib = await _tryPrebuilt(input, target, libName, sources, root);
     if (lib == null && mode == 'prebuilt') {
-      throw StateError('No prebuilt telosnex_audio for $target at this source hash.');
+      throw StateError(
+        'No prebuilt telosnex_audio for $target at this source hash.',
+      );
     }
   }
   lib ??= await _buildFromSource(input, root, os, arch, buildType, libName);
@@ -64,13 +66,16 @@ Future<void> buildNative(BuildInput input, BuildOutputBuilder output) async {
 
 /// Every file that affects the native build, in a stable order.
 List<File> nativeSourceFiles(Directory root) {
-  final files = <File>[
-    File('${root.path}/CMakeLists.txt'),
-  ];
+  final files = <File>[File('${root.path}/CMakeLists.txt')];
   for (final dir in ['cmake', 'src', 'third_party']) {
     final d = Directory('${root.path}/$dir');
     if (!d.existsSync()) continue;
-    files.addAll(d.listSync(recursive: true).whereType<File>().where((f) => !f.path.endsWith('.DS_Store')));
+    files.addAll(
+      d
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => !f.path.endsWith('.DS_Store')),
+    );
   }
   files.sort((a, b) => a.path.compareTo(b.path));
   return files;
@@ -82,7 +87,9 @@ String nativeSourceHash(Directory root, List<File> files) {
   final input = sha256.startChunkedConversion(sink);
   final prefix = root.absolute.path.length + 1;
   for (final f in files) {
-    input.add(f.absolute.path.substring(prefix).replaceAll(r'\', '/').codeUnits);
+    input.add(
+      f.absolute.path.substring(prefix).replaceAll(r'\', '/').codeUnits,
+    );
     input.add([0]);
     input.add(f.readAsBytesSync());
     input.add([0]);
@@ -110,13 +117,20 @@ Future<File?> _tryPrebuilt(
   final expected = prebuiltSha256['$target/$libName'];
   if (tag == null || expected == null) return null;
   if (nativeSourceHash(root, sources) != prebuiltSourceHash) return null;
-  final dir = Directory.fromUri(input.outputDirectoryShared.resolve('prebuilt-${expected.substring(0, 12)}/'));
+  final dir = Directory.fromUri(
+    input.outputDirectoryShared.resolve(
+      'prebuilt-${expected.substring(0, 12)}/',
+    ),
+  );
   final file = File('${dir.path}/$libName');
-  if (file.existsSync() && sha256.convert(file.readAsBytesSync()).toString() == expected) {
+  if (file.existsSync() &&
+      sha256.convert(file.readAsBytesSync()).toString() == expected) {
     return file;
   }
   dir.createSync(recursive: true);
-  final url = Uri.parse('https://github.com/Telosnex/telosnex_audio/releases/download/$tag/$target-$libName');
+  final url = Uri.parse(
+    'https://github.com/Telosnex/telosnex_audio/releases/download/$tag/$target-$libName',
+  );
   final client = HttpClient();
   try {
     final req = await client.getUrl(url);
@@ -149,15 +163,21 @@ Future<File> _buildFromSource(
   final code = input.config.code;
   final cmake = _findTool('cmake');
   if (cmake == null) {
-    throw StateError('telosnex_audio needs CMake 3.22+ to build from source. Install it (brew install cmake ninja).');
+    throw StateError(
+      'telosnex_audio needs CMake 3.22+ to build from source. Install it (brew install cmake ninja).',
+    );
   }
   final ninja = _findTool('ninja');
   final buildDir = Directory.fromUri(
-    input.outputDirectoryShared.resolve('cmake-${os.name}-${arch.name}-$buildType/'),
+    input.outputDirectoryShared.resolve(
+      'cmake-${os.name}-${arch.name}-$buildType/',
+    ),
   );
   final configureArgs = <String>[
-    '-S', root.path,
-    '-B', buildDir.path,
+    '-S',
+    root.path,
+    '-B',
+    buildDir.path,
     '-DCMAKE_BUILD_TYPE=$buildType',
     if (ninja != null) ...['-G', 'Ninja', '-DCMAKE_MAKE_PROGRAM=$ninja'],
     if (os == OS.macOS) ...[
@@ -168,15 +188,20 @@ Future<File> _buildFromSource(
   final cache = File('${buildDir.path}/CMakeCache.txt');
   final stamp = File('${buildDir.path}/tsnx_configure_args.txt');
   final argsText = configureArgs.join('\n');
-  if (!cache.existsSync() || !stamp.existsSync() || stamp.readAsStringSync() != argsText) {
+  if (!cache.existsSync() ||
+      !stamp.existsSync() ||
+      stamp.readAsStringSync() != argsText) {
     buildDir.createSync(recursive: true);
     await _run(cmake, configureArgs);
     stamp.writeAsStringSync(argsText);
   }
   await _run(cmake, [
-    '--build', buildDir.path,
-    '--target', 'telosnex_audio',
-    '--parallel', '${Platform.numberOfProcessors}',
+    '--build',
+    buildDir.path,
+    '--target',
+    'telosnex_audio',
+    '--parallel',
+    '${Platform.numberOfProcessors}',
   ]);
   return File('${buildDir.path}/$libName');
 }

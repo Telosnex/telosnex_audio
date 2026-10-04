@@ -16,7 +16,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-final _includeRe = RegExp(r'^\s*#\s*(?:include|import)\s*"([^"]+)"', multiLine: true);
+final _includeRe = RegExp(
+  r'^\s*#\s*(?:include|import)\s*"([^"]+)"',
+  multiLine: true,
+);
 
 Future<void> main(List<String> args) async {
   final root = File.fromUri(Platform.script).parent.parent.path;
@@ -72,7 +75,9 @@ Future<void> main(List<String> args) async {
     for (final m in _includeRe.allMatches(text)) {
       final inc = m.group(1)!;
       if (generated.contains(inc) || tree.stubs.contains(inc)) continue;
-      final dir = path.contains('/') ? path.substring(0, path.lastIndexOf('/')) : '';
+      final dir = path.contains('/')
+          ? path.substring(0, path.lastIndexOf('/'))
+          : '';
       final candidates = [
         for (final r in roots) r.isEmpty ? inc : '$r/$inc',
         if (dir.isNotEmpty) _normalize('$dir/$inc') else inc,
@@ -87,7 +92,16 @@ Future<void> main(List<String> args) async {
   }
 
   // License files in any ancestor folder of a vendored file.
-  final licenseNames = {'LICENSE', 'LICENSE.txt', 'LICENSE.md', 'COPYING', 'PATENTS', 'AUTHORS', 'README.chromium', 'NOTICE'};
+  final licenseNames = {
+    'LICENSE',
+    'LICENSE.txt',
+    'LICENSE.md',
+    'COPYING',
+    'PATENTS',
+    'AUTHORS',
+    'README.chromium',
+    'NOTICE',
+  };
   final dirs = <String>{};
   for (final f in files) {
     var d = f;
@@ -112,10 +126,20 @@ Future<void> main(List<String> args) async {
     out.writeAsBytesSync(await tree.readBytes(f));
   }
   // absl in its own inline namespace (ADR D5).
-  final options = File('${outDir.path}/third_party/abseil-cpp/absl/base/options.h');
+  final options = File(
+    '${outDir.path}/third_party/abseil-cpp/absl/base/options.h',
+  );
   var opt = options.readAsStringSync();
-  opt = _replaceOnce(opt, '#define ABSL_OPTION_USE_INLINE_NAMESPACE 0', '#define ABSL_OPTION_USE_INLINE_NAMESPACE 1');
-  opt = _replaceOnce(opt, '#define ABSL_OPTION_INLINE_NAMESPACE_NAME head', '#define ABSL_OPTION_INLINE_NAMESPACE_NAME tsnx_absl');
+  opt = _replaceOnce(
+    opt,
+    '#define ABSL_OPTION_USE_INLINE_NAMESPACE 0',
+    '#define ABSL_OPTION_USE_INLINE_NAMESPACE 1',
+  );
+  opt = _replaceOnce(
+    opt,
+    '#define ABSL_OPTION_INLINE_NAMESPACE_NAME head',
+    '#define ABSL_OPTION_INLINE_NAMESPACE_NAME tsnx_absl',
+  );
   options.writeAsStringSync(opt);
   for (final s in tree.stubs) {
     File('${outDir.path}/$s')
@@ -128,8 +152,11 @@ Future<void> main(List<String> args) async {
   }
   for (final g in generated) {
     final src = File('$genDir/$g');
-    if (!src.existsSync()) throw StateError('Generated header missing: ${src.path}');
-    src.copySync((File('${outDir.path}/gen/$g')..parent.createSync(recursive: true)).path);
+    if (!src.existsSync())
+      throw StateError('Generated header missing: ${src.path}');
+    src.copySync(
+      (File('${outDir.path}/gen/$g')..parent.createSync(recursive: true)).path,
+    );
   }
 
   // CMake source lists.
@@ -164,14 +191,27 @@ Future<void> main(List<String> args) async {
     await _vendorSmall(root, name, dep);
     pins[name] = {'url': dep['url'], 'commit': dep['commit']};
   }
-  File('$root/third_party/VENDOR.json').writeAsStringSync(
-    '${const JsonEncoder.withIndent('  ').convert(pins)}\n',
-  );
+  File(
+    '$root/third_party/VENDOR.json',
+  ).writeAsStringSync('${const JsonEncoder.withIndent('  ').convert(pins)}\n');
 
-  stdout.writeln('webrtc: ${files.length} files, ${unresolved.length} unresolved includes (system or excluded).');
-  final suspicious = unresolved.where((u) => u.contains('/') && !u.startsWith('third_party/perfetto') && !u.startsWith('third_party/protobuf')).toList()..sort();
+  stdout.writeln(
+    'webrtc: ${files.length} files, ${unresolved.length} unresolved includes (system or excluded).',
+  );
+  final suspicious =
+      unresolved
+          .where(
+            (u) =>
+                u.contains('/') &&
+                !u.startsWith('third_party/perfetto') &&
+                !u.startsWith('third_party/protobuf'),
+          )
+          .toList()
+        ..sort();
   if (suspicious.isNotEmpty) {
-    stdout.writeln('Unresolved project-style includes (check these are behind #if):');
+    stdout.writeln(
+      'Unresolved project-style includes (check these are behind #if):',
+    );
     for (final u in suspicious) {
       stdout.writeln('  $u');
     }
@@ -195,11 +235,22 @@ String _normalize(String p) {
   return out.join('/');
 }
 
-Future<void> _vendorSmall(String root, String name, Map<String, dynamic> dep) async {
+Future<void> _vendorSmall(
+  String root,
+  String name,
+  Map<String, dynamic> dep,
+) async {
   final tmp = Directory.systemTemp.createTempSync('tsnx_vendor_$name');
   try {
     await _run('git', ['init', '-q'], tmp.path);
-    await _run('git', ['fetch', '-q', '--depth', '1', dep['url'] as String, dep['commit'] as String], tmp.path);
+    await _run('git', [
+      'fetch',
+      '-q',
+      '--depth',
+      '1',
+      dep['url'] as String,
+      dep['commit'] as String,
+    ], tmp.path);
     await _run('git', ['checkout', '-q', 'FETCH_HEAD'], tmp.path);
     final out = Directory('$root/third_party/$name');
     if (out.existsSync()) out.deleteSync(recursive: true);
@@ -222,7 +273,12 @@ Future<String> _run(String exe, List<String> args, String cwd) async {
 
 /// Maps WebRTC paths to the main repository or the Chromium third_party one.
 class _WebRtcTree {
-  _WebRtcTree(this.main, this.thirdParty, {required this.excludes, required this.stubs});
+  _WebRtcTree(
+    this.main,
+    this.thirdParty, {
+    required this.excludes,
+    required this.stubs,
+  });
   final _GitTree main;
   final _GitTree thirdParty;
   final List<String> excludes;
@@ -230,8 +286,9 @@ class _WebRtcTree {
 
   bool _excluded(String p) => excludes.any(p.startsWith);
 
-  (_GitTree, String) _locate(String p) =>
-      p.startsWith('third_party/') ? (thirdParty, p.substring('third_party/'.length)) : (main, p);
+  (_GitTree, String) _locate(String p) => p.startsWith('third_party/')
+      ? (thirdParty, p.substring('third_party/'.length))
+      : (main, p);
 
   bool exists(String p) {
     if (_excluded(p)) return false;
@@ -239,7 +296,8 @@ class _WebRtcTree {
     return t.paths.contains(rel);
   }
 
-  Future<String> read(String p) async => utf8.decode(await readBytes(p), allowMalformed: true);
+  Future<String> read(String p) async =>
+      utf8.decode(await readBytes(p), allowMalformed: true);
 
   Future<List<int>> readBytes(String p) {
     final (t, rel) = _locate(p);
@@ -259,8 +317,14 @@ class _GitTree {
 
   static Future<_GitTree> open(String dir, String commit) async {
     final ls = await _run('git', ['ls-tree', '-r', '--name-only', commit], dir);
-    final proc = await Process.start('git', ['cat-file', '--batch'], workingDirectory: dir);
-    final t = _GitTree._(ls.split('\n').where((l) => l.isNotEmpty).toSet(), proc);
+    final proc = await Process.start('git', [
+      'cat-file',
+      '--batch',
+    ], workingDirectory: dir);
+    final t = _GitTree._(
+      ls.split('\n').where((l) => l.isNotEmpty).toSet(),
+      proc,
+    );
     t._commit = commit;
     proc.stdout.listen(t._onData);
     proc.stderr.listen(stderr.add);
@@ -299,14 +363,17 @@ class _GitTree {
       final c = Completer<List<int>>();
       _pending.add(c);
       _proc.stdin.writeln('$_commit:$rel');
-      return c.future.then((b) {
-        _cache[rel] = b;
-        done.complete(b);
-        return b;
-      }, onError: (Object e) {
-        done.completeError(e);
-        throw e;
-      });
+      return c.future.then(
+        (b) {
+          _cache[rel] = b;
+          done.complete(b);
+          return b;
+        },
+        onError: (Object e) {
+          done.completeError(e);
+          throw e;
+        },
+      );
     });
   }
 
