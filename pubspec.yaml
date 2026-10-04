@@ -1,0 +1,26 @@
+name: telosnex_audio
+description: >-
+  Telosnex audio engine: WebRTC capture, echo cancellation, and a mixer with
+  seekable, rate-changeable playback tracks.
+version: 0.1.0
+publish_to: none
+repository: https://github.com/Telosnex/telosnex_audio
+
+environment:
+  sdk: ^3.10.0
+  flutter: '>=3.38.0'
+
+dependencies:
+  code_assets: ^1.0.0
+  crypto: ^3.0.6
+  ffi: ^2.1.0
+  flutter:
+    sdk: flutter
+  hooks: ^1.0.0
+  meta: ^1.16.0
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+  test: ^1.25.0
