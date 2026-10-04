@@ -1,0 +1,136 @@
+name: Release prebuilts
+
+# Builds the native library for each supported target from one commit,
+# publishes them as a GitHub release, and opens a pull request that pins the
+# release in lib/src/hook/prebuilt.g.dart. The hook uses a prebuilt only when
+# the native source hash matches; otherwise it builds from source (ADR D2).
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, for example native-0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-prebuilts
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  FLUTTER_VERSION: '3.47.1'
+  FLUTTER_SUPPRESS_ANALYTICS: 'true'
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          # Add Windows, Linux, iOS, and Android here as workplan steps 7-8 land.
+          - target: macos-arm64
+            runner: warp-macos-15-arm64-6x
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
+            lib: libtelosnex_audio.dylib
+          - target: macos-x64
+            runner: warp-macos-15-arm64-6x
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
+            lib: libtelosnex_audio.dylib
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: WarpBuilds/checkout@81213ffd451b920176591e3d0e495c29ce59988d # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install build tools
+        run: command -v ninja || brew install ninja
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_args }}
+          cmake --build build/release --target telosnex_audio
+          mkdir -p dist
+          cp "build/release/${{ matrix.lib }}" "dist/${{ matrix.target }}-${{ matrix.lib }}"
+          strip -x "dist/${{ matrix.target }}-${{ matrix.lib }}"
+
+      - name: Upload
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6 (Node 24)
+        with:
+          name: ${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish release and pin it
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
+        with:
+          fetch-depth: 1
+
+      - name: Download builds
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7 (Node 24)
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Set up pinned Flutter SDK
+        uses: Telosnex/flutter-action@e08e50d1e5cad6433def71cc2b3a5ee716ed348e # fork of v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: 'false'
+          pub-cache: 'false'
+
+      - name: Write the prebuilt manifest
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^native-[0-9A-Za-z.+-]+$ ]] || { echo "bad tag $TAG" >&2; exit 2; }
+          flutter pub get
+          dart run tool/write_prebuilt_manifest.dart --tag "$TAG" --assets dist
+          (cd dist && sha256sum -- * | tee SHA256SUMS)
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" dist/* --target "$GITHUB_SHA" \
+            --title "$TAG" --notes "Prebuilt telosnex_audio native libraries for $GITHUB_SHA."
+
+      - name: Open the pin pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          branch="pin-$TAG"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add lib/src/hook/prebuilt.g.dart
+          git commit -m "Pin prebuilt release $TAG"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" --title "Pin prebuilt release $TAG" \
+            --body "Points the native-assets hook at release $TAG. The hook still builds from source when the native source hash differs."

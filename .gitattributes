@@ -1,0 +1,7 @@
+# Native sources are hashed byte for byte to match prebuilt releases
+# (lib/src/hook/native_build.dart). Never convert line endings.
+CMakeLists.txt -text
+cmake/** -text
+src/** -text
+third_party/** -text
+*.mp3 binary

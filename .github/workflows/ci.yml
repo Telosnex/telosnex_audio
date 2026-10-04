@@ -1,0 +1,118 @@
+name: CI
+
+# Native tests (plain, ThreadSanitizer, and an x86_64 compile), Dart API tests
+# through the native-assets hook, and an end-to-end example app build.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  FLUTTER_VERSION: '3.47.1'
+  FLUTTER_SUPPRESS_ANALYTICS: 'true'
+
+jobs:
+  native:
+    name: Native tests / macOS arm64
+    runs-on: warp-macos-15-arm64-6x
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: WarpBuilds/checkout@81213ffd451b920176591e3d0e495c29ce59988d # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install build tools
+        run: |
+          set -euo pipefail
+          command -v ninja || brew install ninja
+          cmake --version
+          ninja --version
+
+      - name: Build and run native tests
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON
+          cmake --build build/test --target tsnx_tests
+          ./build/test/native_test/tsnx_tests
+
+      - name: ThreadSanitizer
+        run: |
+          set -euo pipefail
+          tsan=-fsanitize=thread
+          cmake -S . -B build/tsan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON \
+            -DCMAKE_C_FLAGS=$tsan -DCMAKE_CXX_FLAGS=$tsan -DCMAKE_OBJCXX_FLAGS=$tsan \
+            -DCMAKE_EXE_LINKER_FLAGS=$tsan -DCMAKE_SHARED_LINKER_FLAGS=$tsan
+          cmake --build build/tsan --target tsnx_tests
+          TSAN_OPTIONS=halt_on_error=1 ./build/tsan/native_test/tsnx_tests
+
+      - name: Compile for macOS x86_64
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/x64 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64
+          cmake --build build/x64 --target telosnex_audio
+          file build/x64/libtelosnex_audio.dylib | grep -q x86_64
+
+      - name: Exported symbols are tsnx_* only (ADR D5)
+        run: |
+          set -euo pipefail
+          nm -gU build/x64/libtelosnex_audio.dylib | awk '{print $3}' | tee /tmp/exports.txt
+          ! grep -v '^_tsnx_' /tmp/exports.txt
+
+  dart:
+    name: Dart API tests and example build / macOS arm64
+    runs-on: warp-macos-15-arm64-6x
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: WarpBuilds/checkout@81213ffd451b920176591e3d0e495c29ce59988d # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install build tools
+        run: command -v ninja || brew install ninja
+
+      - name: Set up pinned Flutter SDK
+        uses: Telosnex/flutter-action@e08e50d1e5cad6433def71cc2b3a5ee716ed348e # fork of v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          architecture: arm64
+          cache: 'false'
+          pub-cache: 'false'
+
+      - name: Resolve dependencies
+        run: |
+          set -euo pipefail
+          flutter pub get
+          (cd example && flutter pub get)
+
+      - name: Format and analyze
+        run: |
+          set -euo pipefail
+          dart format --output=none --set-exit-if-changed lib test tool hook example/lib
+          dart analyze --fatal-infos
+
+      - name: Dart API tests (builds the native asset)
+        run: flutter test
+
+      - name: Example app builds through the hook
+        run: |
+          set -euo pipefail
+          cd example
+          flutter build macos --debug
+          test -d build/macos/Build/Products/Debug/telosnex_audio_example.app/Contents/Frameworks/telosnex_audio.framework
