@@ -109,3 +109,7 @@ Status (2026-10-05):
   upstream text verbatim. The app receives these notices when it adds the package dependency.
 - Restored the fork freeze note in the app maintenance document. The ADR names implemented tests
   and records pending gates. The owner waived step 10 latency and web echo checks, not billing.
+- Owner correction: the repository is public and uses standard GitHub-hosted runners, not WarpBuild.
+  CI and release workflows now use macos-15 (arm64), ubuntu-24.04 (x64), ubuntu-24.04-arm, and
+  windows-2025-vs2026. Checkout uses actions/checkout. actionlint passes. Removed the temporary
+  repository access to the organization's self-hosted runner group. No WarpBuild app access is needed.

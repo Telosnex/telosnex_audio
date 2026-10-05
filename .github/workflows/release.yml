@@ -36,30 +36,30 @@ jobs:
         include:
           # Add iOS and Android here as workplan step 8 lands.
           - target: macos-arm64
-            runner: warp-macos-15-arm64-6x
+            runner: macos-15
             cmake_args: -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
             lib: libtelosnex_audio.dylib
           - target: macos-x64
-            runner: warp-macos-15-arm64-6x
+            runner: macos-15
             cmake_args: -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
             lib: libtelosnex_audio.dylib
           # Linux builds run in Debian bookworm (glibc 2.36), the Raspberry Pi
           # OS base, so one library loads on the Pi and on newer desktops.
           - target: linux-x64
-            runner: warp-ubuntu-2404-x64-8x
+            runner: ubuntu-24.04
             container: debian:bookworm
             lib: libtelosnex_audio.so
           - target: linux-arm64
-            runner: warp-ubuntu-2604-arm64-8x
+            runner: ubuntu-24.04-arm
             container: debian:bookworm
             lib: libtelosnex_audio.so
           - target: windows-x64
-            runner: warp-windows-2025-vs2026-x64-4x
+            runner: windows-2025-vs2026
             vcvars: x64
             cmake_args: -DTSNX_TARGET_ARCH=x64
             lib: telosnex_audio.dll
           - target: windows-arm64
-            runner: warp-windows-2025-vs2026-x64-4x
+            runner: windows-2025-vs2026
             vcvars: x64_arm64
             cmake_args: -DTSNX_TARGET_ARCH=arm64
             lib: telosnex_audio.dll
@@ -68,7 +68,7 @@ jobs:
     timeout-minutes: 40
     steps:
       - name: Checkout
-        uses: WarpBuilds/checkout@81213ffd451b920176591e3d0e495c29ce59988d # v7
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
         with:
           persist-credentials: false
           fetch-depth: 1

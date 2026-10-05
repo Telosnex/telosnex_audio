@@ -1,6 +1,0 @@
-self-hosted-runner:
-  labels:
-    - warp-macos-15-arm64-6x
-    - warp-ubuntu-2404-x64-8x
-    - warp-ubuntu-2604-arm64-8x
-    - warp-windows-2025-vs2026-x64-4x

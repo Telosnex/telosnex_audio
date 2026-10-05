@@ -28,11 +28,11 @@ env:
 jobs:
   native:
     name: Native tests / macOS arm64
-    runs-on: warp-macos-15-arm64-6x
+    runs-on: macos-15
     timeout-minutes: 40
     steps:
       - name: Checkout
-        uses: WarpBuilds/checkout@81213ffd451b920176591e3d0e495c29ce59988d # v7
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -81,14 +81,14 @@ jobs:
       matrix:
         include:
           - arch: x64
-            runner: warp-ubuntu-2404-x64-8x
+            runner: ubuntu-24.04
           - arch: arm64
-            runner: warp-ubuntu-2604-arm64-8x
+            runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     steps:
       - name: Checkout
-        uses: WarpBuilds/checkout@81213ffd451b920176591e3d0e495c29ce59988d # v7
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -114,11 +114,11 @@ jobs:
 
   native-windows:
     name: Native tests / Windows x64, arm64 compile
-    runs-on: warp-windows-2025-vs2026-x64-4x
+    runs-on: windows-2025-vs2026
     timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: WarpBuilds/checkout@81213ffd451b920176591e3d0e495c29ce59988d # v7
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -139,11 +139,11 @@ jobs:
 
   dart:
     name: Dart API tests and example build / macOS arm64
-    runs-on: warp-macos-15-arm64-6x
+    runs-on: macos-15
     timeout-minutes: 40
     steps:
       - name: Checkout
-        uses: WarpBuilds/checkout@81213ffd451b920176591e3d0e495c29ce59988d # v7
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -170,10 +170,11 @@ jobs:
         run: |
           set -euo pipefail
           dart format --output=none --set-exit-if-changed lib test tool hook example/lib
+          dart tool/licenses.dart --check
           dart analyze --fatal-infos
 
       - name: Dart API tests (builds the native asset)
-        run: flutter test
+        run: flutter test test/engine_test.dart test/licenses_test.dart
 
       - name: Example app builds through the hook
         run: |
@@ -189,16 +190,16 @@ jobs:
       matrix:
         include:
           - os: linux
-            runner: warp-ubuntu-2404-x64-8x
+            runner: ubuntu-24.04
             check: test -f build/linux/x64/debug/bundle/lib/libtelosnex_audio.so
           - os: windows
-            runner: warp-windows-2025-vs2026-x64-4x
+            runner: windows-2025-vs2026
             check: test -f build/windows/x64/runner/Debug/telosnex_audio.dll
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     steps:
       - name: Checkout
-        uses: WarpBuilds/checkout@81213ffd451b920176591e3d0e495c29ce59988d # v7
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -229,11 +230,11 @@ jobs:
 
   example-android:
     name: Example build / Android arm64, x86_64
-    runs-on: warp-ubuntu-2404-x64-8x
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
       - name: Checkout
-        uses: WarpBuilds/checkout@81213ffd451b920176591e3d0e495c29ce59988d # v7
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -264,11 +265,11 @@ jobs:
 
   web:
     name: Web engine / Chrome
-    runs-on: warp-macos-15-arm64-6x
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: WarpBuilds/checkout@81213ffd451b920176591e3d0e495c29ce59988d # v7
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
         with:
           persist-credentials: false
           fetch-depth: 1
