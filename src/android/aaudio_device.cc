@@ -658,6 +658,8 @@ class AAudioDevice final : public webrtc::AudioDeviceGeneric,
 
 }  // namespace
 
+bool AAudioAvailable() { return Api() != nullptr; }
+
 webrtc::scoped_refptr<webrtc::AudioDeviceModule> CreateAAudioAdm(
     const webrtc::Environment& env, std::function<void()> on_output_restart,
     AAudioRoutes** routes) {

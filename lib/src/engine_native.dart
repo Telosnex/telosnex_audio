@@ -58,6 +58,7 @@ String _errorText(int code) => switch (code) {
   -4 => 'device error',
   -5 => 'unsupported format',
   -6 => 'command queue full',
+  -8 => 'unsupported platform',
   _ => 'error $code',
 };
 
@@ -104,6 +105,11 @@ final class _NativeEngine implements AudioEngine {
       final rc = tsnxEngineOpen(config, out);
       if (rc != 0) {
         listener.close();
+        if (rc == -8) {
+          throw UnsupportedError(
+            'telosnex_audio platform audio needs Android 8 (API 26) or later',
+          );
+        }
         throw AudioEngineException(rc, 'open failed: ${_errorText(rc)}');
       }
       engine = _NativeEngine._(

@@ -74,6 +74,15 @@ struct EngineConfig {
   int linux_audio_backend = 0;
   // Seconds of idle output before the output device stops (platform only).
   double idle_stop_seconds = 3.0;
+#if TSNX_ALLOC_PROBE
+  // Native-test observer for the exact samples given to ProcessReverseStream.
+  // The callback runs on the render thread. It must not allocate or lock.
+  using RenderReferenceTestHook = void (*)(const int16_t* samples,
+                                           size_t frames, size_t channels,
+                                           void* context);
+  RenderReferenceTestHook render_reference_test_hook = nullptr;
+  void* render_reference_test_context = nullptr;
+#endif
 };
 
 struct CaptureBlock {
@@ -92,6 +101,7 @@ enum EngineError : int32_t {
   kErrUnsupportedFormat = -5,
   kErrQueueFull = -6,
   kErrBusy = -7,
+  kErrUnsupportedPlatform = -8,
 };
 
 class Engine : public EventSink {
@@ -223,6 +233,7 @@ class Engine : public EventSink {
   int64_t render_delay_ns_ = 0;
   std::unique_ptr<float[]> render_f_in_;
   std::unique_ptr<float[]> render_f_out_;
+  std::unique_ptr<int16_t[]> render_apm_out_;
   std::unique_ptr<BlockResampler> render_resampler_;
   int render_channels_ = 0;
   int64_t render_format_changes_ = 0;

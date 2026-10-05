@@ -31,6 +31,7 @@ typedef struct tsnx_engine tsnx_engine;
 #define TSNX_ERR_DEVICE -4
 #define TSNX_ERR_UNSUPPORTED_FORMAT -5
 #define TSNX_ERR_QUEUE_FULL -6
+#define TSNX_ERR_UNSUPPORTED_PLATFORM -8
 // Write results.
 #define TSNX_WRITE_FULL -101
 #define TSNX_WRITE_ENDED -102

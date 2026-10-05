@@ -1,8 +1,15 @@
 // Engine-level invariants with the manual device (ADR I1, I2, I3).
+#include <array>
+#include <cstring>
+#include <memory>
 #include <random>
 
 #include "alloc_probe.h"
+#include "engine.h"
 #include "harness.h"
+#if defined(WEBRTC_ANDROID)
+#include "android/aaudio_device.h"
+#endif
 
 using namespace tsnx_test;
 
@@ -30,7 +37,139 @@ double Energy(const int16_t* x, size_t n) {
   for (size_t i = 0; i < n; ++i) e += static_cast<double>(x[i]) * x[i];
   return e + 1e-3;
 }
+
+#if TSNX_ALLOC_PROBE
+struct RenderReference {
+  std::array<int16_t, tsnx::Engine::kMixFrames * 2> samples{};
+  size_t frames = 0;
+  size_t channels = 0;
+  int calls = 0;
+};
+
+void ObserveRenderReference(const int16_t* samples, size_t frames,
+                            size_t channels, void* context) {
+  auto* observation = static_cast<RenderReference*>(context);
+  observation->frames = frames;
+  observation->channels = channels;
+  ++observation->calls;
+  std::memcpy(observation->samples.data(), samples,
+              frames * channels * sizeof(int16_t));
+}
+
+void CheckReferenceEqualsDevice(tsnx::Engine* engine,
+                                RenderReference* observation, int channels,
+                                int* different_blocks, int16_t* prior) {
+  std::array<int16_t, tsnx::Engine::kMixFrames * 2> device{};
+  const int before = observation->calls;
+  CHECK_EQ(engine->ManualRender(1, device.data(), nullptr), 0);
+  CHECK_EQ(observation->calls, before + 1);
+  CHECK_EQ(observation->frames, tsnx::Engine::kMixFrames);
+  CHECK_EQ(observation->channels, channels);
+  const size_t samples = tsnx::Engine::kMixFrames * channels;
+  CHECK_MSG(std::memcmp(observation->samples.data(), device.data(),
+                        samples * sizeof(int16_t)) == 0,
+            "render reference differs from %d-channel device block", channels);
+  bool different = false;
+  for (size_t i = 0; i < samples; ++i) different |= device[i] != prior[i];
+  if (different) ++*different_blocks;
+  std::memcpy(prior, device.data(), samples * sizeof(int16_t));
+}
+#endif
 }  // namespace
+
+// I3: the exact samples entering ProcessReverseStream are the samples passed
+// to the device. This covers mono and stereo mixes after Sonic, gain ramps,
+// multiple tracks, and command transitions. The observer is C++-only test
+// configuration and does no allocation or locking on the render thread.
+TEST(EngineRenderReferenceExactlyMatchesDeviceOutput) {
+#if TSNX_ALLOC_PROBE
+  for (int channels : {1, 2}) {
+    RenderReference observation;
+    tsnx::EngineConfig config;
+    config.manual_device = true;
+    config.manual_output_channels = channels;
+    config.echo_cancellation = true;
+    config.noise_suppression = true;
+    config.auto_gain = true;
+    config.render_reference_test_hook = &ObserveRenderReference;
+    config.render_reference_test_context = &observation;
+    int32_t error = 0;
+    std::unique_ptr<tsnx::Engine> engine = tsnx::Engine::Open(config, &error);
+    CHECK_EQ(error, 0);
+    CHECK(engine != nullptr);
+    if (!engine) continue;
+
+    int32_t speech = -1;
+    int32_t music = -1;
+    CHECK_EQ(engine->CreateTrack(24000, 1, tsnx::Retention::kAll, &speech), 0);
+    CHECK_EQ(engine->CreateTrack(48000, 2, tsnx::Retention::kUnplayed,
+                                 &music),
+             0);
+    auto speech_pcm = ModNoise(24000, 1, 4, 41 + channels);
+    auto music_pcm = ModNoise(48000, 2, 4, 51 + channels);
+    CHECK_EQ(engine->Write(speech, speech_pcm.data(), 24000 * 4), 24000 * 4);
+    CHECK_EQ(engine->Write(music, music_pcm.data(), 48000 * 4), 48000 * 4);
+    CHECK_EQ(engine->SetRate(speech, 1.5), 0);
+    CHECK_EQ(engine->SetGain(speech, 0.35, 35), 0);
+    CHECK_EQ(engine->SetGain(music, 0.55, 25), 0);
+    CHECK_EQ(engine->Play(speech), 0);
+    CHECK_EQ(engine->Play(music), 0);
+
+    std::array<int16_t, tsnx::Engine::kMixFrames * 2> prior{};
+    int different_blocks = 0;
+    for (int block = 0; block < 80; ++block) {
+      switch (block) {
+        case 8:
+          CHECK_EQ(engine->SetRate(music, 0.75), 0);
+          break;
+        case 16:
+          CHECK_EQ(engine->SetGain(speech, 1.4, 50), 0);
+          break;
+        case 28:
+          CHECK_EQ(engine->Pause(music), 0);
+          break;
+        case 36:
+          CHECK_EQ(engine->Seek(music, 48000), 0);
+          CHECK_EQ(engine->Play(music), 0);
+          break;
+        case 48:
+          CHECK_EQ(engine->Flush(music), 0);
+          break;
+        case 56:
+          CHECK_EQ(engine->SetRate(speech, 2.0), 0);
+          break;
+        case 68:
+          CHECK_EQ(engine->Pause(speech), 0);
+          break;
+        default:
+          break;
+      }
+      CheckReferenceEqualsDevice(engine.get(), &observation, channels,
+                                 &different_blocks, prior.data());
+    }
+    CHECK_MSG(different_blocks > 40, "%d-channel output changed in %d blocks",
+              channels, different_blocks);
+  }
+#else
+  std::fprintf(stderr, "  skipped: build without TSNX_ALLOC_PROBE\n");
+#endif
+}
+
+#if defined(WEBRTC_ANDROID)
+// Android 7 can load the library, but platform audio is explicit rather than
+// a generic device failure because AAudio starts at Android 8 (API 26).
+TEST(AndroidWithoutAAudioReturnsUnsupportedPlatform) {
+  if (tsnx::AAudioAvailable()) {
+    std::fprintf(stderr, "  skipped: AAudio is available\n");
+    return;
+  }
+  tsnx_engine_config config{};
+  tsnx_engine* engine = nullptr;
+  CHECK_EQ(tsnx_engine_open(&config, &engine),
+           TSNX_ERR_UNSUPPORTED_PLATFORM);
+  CHECK(engine == nullptr);
+}
+#endif
 
 // I1: no heap allocation on the render path once running, across play,
 // rate, gain, seek, pause, and flush.

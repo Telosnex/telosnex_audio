@@ -13,7 +13,7 @@
 // when the route for the selection changed (a headset left or came back).
 //
 // AAudio loads at run time, so the library also loads on Android 7. There,
-// Init() fails and the engine reports no device.
+// engine open returns kErrUnsupportedPlatform.
 #ifndef TSNX_ANDROID_AAUDIO_DEVICE_H_
 #define TSNX_ANDROID_AAUDIO_DEVICE_H_
 
@@ -41,6 +41,11 @@ class AAudioRoutes {
 // and reopens, for example after a headset is plugged in. The audio in the
 // old stream's buffer was never heard (ADR I10). `routes` is valid while
 // the module lives.
+//
+// Android 7 (API 24-25) can load the package but has no AAudio. The engine
+// checks AAudioAvailable() and returns kErrUnsupportedPlatform before it
+// creates this module.
+bool AAudioAvailable();
 webrtc::scoped_refptr<webrtc::AudioDeviceModule> CreateAAudioAdm(
     const webrtc::Environment& env, std::function<void()> on_output_restart,
     AAudioRoutes** routes);

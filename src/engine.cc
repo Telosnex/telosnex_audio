@@ -255,6 +255,7 @@ bool Engine::Init(int32_t* error) {
   }
   render_f_in_.reset(new float[kMixFrames * 2]);
   render_f_out_.reset(new float[kMixFrames * 2]);
+  render_apm_out_.reset(new int16_t[kMixFrames * 2]);
   cap_f_.resize(480 * 2);
   cap_f48_.resize(kMixFrames);
   cap_s48_.resize(kMixFrames);
@@ -277,6 +278,7 @@ bool Engine::Init(int32_t* error) {
 
   device_thread_ = std::make_unique<DeviceThread>();
   bool ok = false;
+  bool unsupported = false;
   device_thread_->Invoke([&] {
 #if defined(__APPLE__)
     if (config_.platform_voice_processing)
@@ -294,6 +296,10 @@ bool Engine::Init(int32_t* error) {
     rtc_->adm = CreateAppleVoiceProcessingAdm(rtc_->env);
 #elif defined(WEBRTC_ANDROID)
     // Android: AAudio, media audio, AEC3 in the APM.
+    if (!AAudioAvailable()) {
+      unsupported = true;
+      return;
+    }
     rtc_->adm = CreateAAudioAdm(
         rtc_->env, [this] { MarkOutputRestart(); }, &rtc_->android_routes);
 #else
@@ -306,7 +312,7 @@ bool Engine::Init(int32_t* error) {
     ok = true;
   });
   if (!ok) {
-    *error = kErrDevice;
+    *error = unsupported ? kErrUnsupportedPlatform : kErrDevice;
     device_thread_->Invoke([&] {
 #if defined(WEBRTC_ANDROID)
       rtc_->android_routes = nullptr;
@@ -585,9 +591,16 @@ void Engine::RenderBlock(int16_t* out, size_t frames, size_t channels,
   webrtc::AudioFrame& mix = rtc_->mix_frame;
   rtc_->mixer->Mix(ch, &mix);
   const webrtc::StreamConfig rc(kMixRate, ch);
-  // I3: the frame the APM analyzes is the frame the device gets.
+  // I3: keep the render reference separate from the APM destination. The
+  // device gets the exact mixed samples that enter ProcessReverseStream,
+  // even if an APM implementation writes different samples to its output.
   int16_t* mixed = mix.mutable_data();
-  rtc_->apm->ProcessReverseStream(mixed, rc, rc, mixed);
+#if TSNX_ALLOC_PROBE
+  if (config_.render_reference_test_hook)
+    config_.render_reference_test_hook(mixed, kMixFrames, ch,
+                                       config_.render_reference_test_context);
+#endif
+  rtc_->apm->ProcessReverseStream(mixed, rc, rc, render_apm_out_.get());
   apm_render_rate_ = kMixRate;
 
   if (rate == static_cast<uint32_t>(kMixRate) && frames == kMixFrames &&

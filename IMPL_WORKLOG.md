@@ -130,3 +130,24 @@ Status (2026-10-05):
   Real provider/billing parity and a universal terminal billing record on transport drops remain
   open. No endpoint deployment or transport-default change occurred. Latency/web echo checks
   were skipped as requested.
+
+## Remaining code approval (2026-10-05)
+
+- The owner approved the app integration, durable session billing records, missing invariant
+  tests, and browser/ARM32 runtime work. Paid provider comparisons have a $100 total budget.
+  Production defaults and deployment remain gated.
+- Exact I3 now compares each sample entering ProcessReverseStream with the device output.
+  It covers mono/stereo mixes, 24/48 kHz tracks, rate, gain ramps, pause, seek, and flush.
+  The APM writes to a separate preallocated destination. macOS native and TSan: 45 tests pass.
+  The steady render path still has zero allocations.
+- ARM32 native tests ran with the official Android API24 Bionic libraries under QEMU user
+  emulation, not in the ARM64-only emulator. All 46 tests pass as ELF32 ARM EABI5, including
+  exact I3, lock-free atomics, and the API24 platform guard. A private QEMU test build treats
+  PER_LINUX32 as already satisfied on its x86 host. No QEMU patch is part of this package.
+- The library loads on Android API24/25, but AAudio platform audio needs API26 or later.
+  Missing AAudio returns TSNX_ERR_UNSUPPORTED_PLATFORM; Dart reports UnsupportedError.
+  The app's enabled backend fails explicitly and does not start the fork as a fallback.
+- Real-time Track AudioWorklet checks pass in Firefox157 and Safari26.0.1. I4 p95 is
+  9.8-10.7 ms in Firefox and 10.0-10.2 ms in Safari. Rate, window/far seek, idle/resume,
+  capture, and devices pass. Flutter uses its JavaScript shell in these browsers, while
+  the Track core still runs WebAssembly in the AudioWorklet. Chrome core: 14 tests pass.
