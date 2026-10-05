@@ -42,10 +42,20 @@ Future<void> buildNative(BuildInput input, BuildOutputBuilder output) async {
   final libName = os.dylibFileName('telosnex_audio');
   final target = '${os.name}-${arch.name}';
 
+  // A desktop target on another host OS (flutterpi_tool builds Linux arm64
+  // on macOS) has no compiler and sysroot here: use the prebuilt.
+  final cross = os != OS.current && os != OS.iOS && os != OS.android;
+  if (cross && mode == 'source') {
+    throw StateError(
+      'telosnex_audio cannot build $target from source on ${OS.current.name}. '
+      'Build on a $target host, or use a prebuilt.',
+    );
+  }
+
   File? lib;
   if (mode != 'source') {
     lib = await _tryPrebuilt(input, target, libName, sources, root);
-    if (lib == null && mode == 'prebuilt') {
+    if (lib == null && (mode == 'prebuilt' || cross)) {
       throw StateError(
         'No prebuilt telosnex_audio for $target at this source hash.',
       );
