@@ -24,7 +24,11 @@ const assetName = 'src/ffi.dart';
 /// Targets with an engine. Other targets get no asset; the Dart API then
 /// reports the engine as unavailable (ADR workplan step 6).
 bool isSupportedTarget(OS os, Architecture arch) =>
-    (os == OS.macOS || os == OS.linux || os == OS.windows || os == OS.iOS) &&
+    (os == OS.macOS ||
+        os == OS.linux ||
+        os == OS.windows ||
+        os == OS.iOS ||
+        os == OS.android) &&
     (arch == Architecture.arm64 || arch == Architecture.x64);
 
 Future<void> buildNative(BuildInput input, BuildOutputBuilder output) async {
@@ -216,6 +220,12 @@ Future<File> _buildFromSource(
       '-DCMAKE_OSX_ARCHITECTURES=${arch == Architecture.arm64 ? 'arm64' : 'x86_64'}',
       '-DCMAKE_OSX_DEPLOYMENT_TARGET=${code.iOS.targetVersion}',
     ],
+    if (os == OS.android) ...[
+      '-DCMAKE_TOOLCHAIN_FILE=${_androidNdk(code)}/build/cmake/android.toolchain.cmake',
+      '-DANDROID_ABI=${arch == Architecture.arm64 ? 'arm64-v8a' : 'x86_64'}',
+      '-DANDROID_PLATFORM=android-${code.android.targetNdkApi}',
+      '-DANDROID_STL=c++_static',
+    ],
     if (linuxCompilers != null) ...[
       '-DCMAKE_C_COMPILER=${linuxCompilers.$1}',
       '-DCMAKE_CXX_COMPILER=${linuxCompilers.$2}',
@@ -246,6 +256,20 @@ Future<File> _buildFromSource(
     '${Platform.numberOfProcessors}',
   ], env);
   return File('${buildDir.path}/$libName');
+}
+
+/// The NDK root, from the clang the Flutter tool gives
+/// (`<ndk>/toolchains/llvm/prebuilt/<host>/bin/clang`).
+String _androidNdk(CodeConfig code) {
+  final cc = code.cCompiler?.compiler.toFilePath();
+  if (cc == null) {
+    throw StateError('telosnex_audio needs the Android NDK to build.');
+  }
+  var dir = File(cc).parent;
+  for (var i = 0; i < 5; i++) {
+    dir = dir.parent;
+  }
+  return dir.path;
 }
 
 /// The C and C++ compilers for Linux: the Flutter tool's clang when it gives

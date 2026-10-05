@@ -494,3 +494,7 @@ set(TSNX_WEBRTC_SOURCES_IOS
   ${TSNX_WEBRTC_DIR}/sdk/objc/helpers/RTCDispatcher.m
   ${TSNX_WEBRTC_DIR}/sdk/objc/helpers/UIDevice+RTCDevice.mm
 )
+set(TSNX_WEBRTC_SOURCES_ANDROID
+  ${TSNX_WEBRTC_DIR}/api/task_queue/default_task_queue_factory_stdlib.cc
+  ${TSNX_WEBRTC_DIR}/rtc_base/task_queue_stdlib.cc
+)

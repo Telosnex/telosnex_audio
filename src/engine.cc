@@ -19,7 +19,7 @@
 #include "api/audio/audio_mixer.h"
 #include "api/audio/audio_processing.h"
 #include "api/audio/builtin_audio_processing_builder.h"
-#if !defined(WEBRTC_IOS)
+#if !defined(WEBRTC_IOS) && !defined(WEBRTC_ANDROID)
 #include "api/audio/create_audio_device_module.h"
 #endif
 #include "api/environment/environment.h"
@@ -33,6 +33,9 @@
 #endif
 #if defined(WEBRTC_IOS)
 #include "apple/ios_session.h"
+#endif
+#if defined(WEBRTC_ANDROID)
+#include "android/aaudio_device.h"
 #endif
 #include "modules/audio_mixer/output_rate_calculator.h"
 #include "rtc_base/thread.h"
@@ -257,6 +260,9 @@ bool Engine::Init(int32_t* error) {
 #if defined(WEBRTC_IOS)
     // iOS: AVAudioEngine with Apple voice processing (the fork's device).
     rtc_->adm = CreateAppleVoiceProcessingAdm(rtc_->env);
+#elif defined(WEBRTC_ANDROID)
+    // Android: AAudio, media audio, AEC3 in the APM.
+    rtc_->adm = CreateAAudioAdm(rtc_->env, [this] { MarkOutputRestart(); });
 #else
     if (!rtc_->adm)
       rtc_->adm = webrtc::CreateAudioDeviceModule(rtc_->env, layer);

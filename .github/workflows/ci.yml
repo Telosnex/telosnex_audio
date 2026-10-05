@@ -225,3 +225,38 @@ jobs:
           flutter pub get
           flutter build ${{ matrix.os }} --debug
           ${{ matrix.check }}
+
+  example-android:
+    name: Example build / Android arm64, x86_64
+    runs-on: warp-ubuntu-2404-x64-8x
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: WarpBuilds/checkout@81213ffd451b920176591e3d0e495c29ce59988d # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo apt-get install -y -q cmake ninja-build
+
+      - name: Set up pinned Flutter SDK
+        uses: Telosnex/flutter-action@e08e50d1e5cad6433def71cc2b3a5ee716ed348e # fork of v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: 'false'
+          pub-cache: 'false'
+
+      - name: Example app builds through the hook
+        run: |
+          set -euo pipefail
+          cd example
+          flutter pub get
+          flutter build apk --debug --target-platform android-arm64,android-x64
+          unzip -l build/app/outputs/flutter-apk/app-debug.apk | tee /tmp/apk.txt
+          grep -q 'lib/arm64-v8a/libtelosnex_audio.so' /tmp/apk.txt
+          grep -q 'lib/x86_64/libtelosnex_audio.so' /tmp/apk.txt

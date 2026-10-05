@@ -520,6 +520,10 @@
         "sdk/objc/base/RTCLogging.mm",
         "sdk/objc/helpers/RTCDispatcher.m",
         "sdk/objc/helpers/UIDevice+RTCDevice.mm"
+      ],
+      "android": [
+        "api/task_queue/default_task_queue_factory_stdlib.cc",
+        "rtc_base/task_queue_stdlib.cc"
       ]
     }
   },

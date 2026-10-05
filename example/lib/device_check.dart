@@ -13,7 +13,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:telosnex_audio/telosnex_audio.dart';
 
-void log(String s) => stdout.writeln('TSNX_DEVICE: $s');
+// debugPrint reaches logcat on Android and the console on iOS.
+void log(String s) => debugPrint('TSNX_DEVICE: $s');
 
 Future<void> sleep(int ms) => Future.delayed(Duration(milliseconds: ms));
 

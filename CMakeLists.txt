@@ -114,6 +114,14 @@ if(APPLE)
   list(APPEND TSNX_DEFINES RTC_OBJC_TYPE_PREFIX=TSNX)
   # WebRTC's Objective-C (like Chromium's) is written for ARC.
   set(TSNX_OBJC_ARC $<$<COMPILE_LANGUAGE:OBJC,OBJCXX>:-fobjc-arc>)
+elseif(ANDROID)
+  # AAudio loads at run time (src/android); minSdk 24 has no libaaudio.so.
+  list(APPEND TSNX_DEFINES WEBRTC_POSIX WEBRTC_LINUX WEBRTC_ANDROID)
+  list(APPEND TSNX_WEBRTC_SOURCES ${TSNX_WEBRTC_SOURCES_ANDROID}
+    ${ANDROID_NDK}/sources/android/cpufeatures/cpu-features.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/android/deadlock_warning.cc)
+  set(TSNX_EXTRA_INCLUDES ${ANDROID_NDK}/sources/android/cpufeatures)
+  list(APPEND TSNX_LINK_LIBS log dl)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   # ALSA and PulseAudio load at run time (dlopen); the build needs only their
   # headers.
@@ -154,6 +162,7 @@ set(TSNX_INCLUDES
   ${TSNX_WEBRTC_DIR}/sdk/objc
   ${TSNX_WEBRTC_DIR}/third_party/abseil-cpp
   ${TSNX_WEBRTC_DIR}/gen
+  ${TSNX_EXTRA_INCLUDES}
 )
 if(TSNX_MSVC_STYLE)
   set(TSNX_WARN_OFF /w)
@@ -200,6 +209,8 @@ file(GLOB TSNX_CORE_SOURCES CONFIGURE_DEPENDS
 if(APPLE)
   file(GLOB TSNX_CORE_APPLE CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/apple/*.mm)
   list(APPEND TSNX_CORE_SOURCES ${TSNX_CORE_APPLE})
+elseif(ANDROID)
+  list(APPEND TSNX_CORE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/android/aaudio_device.cc)
 endif()
 add_library(tsnx_core STATIC ${TSNX_CORE_SOURCES})
 target_include_directories(tsnx_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -218,12 +229,16 @@ if(APPLE)
   set_target_properties(telosnex_audio PROPERTIES
     INSTALL_NAME_DIR "@rpath"
     BUILD_WITH_INSTALL_NAME_DIR ON)
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR ANDROID)
   target_link_options(telosnex_audio PRIVATE
     "LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/src/export/exports.linux"
     "LINKER:--gc-sections" "LINKER:-z,defs")
   target_compile_options(tsnx_webrtc PRIVATE -ffunction-sections -fdata-sections)
   target_compile_options(tsnx_core PRIVATE -ffunction-sections -fdata-sections)
+  if(ANDROID)
+    # Android 15 devices can use 16 KB pages.
+    target_link_options(telosnex_audio PRIVATE "LINKER:-z,max-page-size=16384")
+  endif()
 elseif(WIN32)
   # Exports come from TSNX_EXPORT (__declspec(dllexport)) in tsnx_audio.h.
   set_target_properties(telosnex_audio PROPERTIES PREFIX "")
@@ -235,8 +250,10 @@ if(TSNX_BUILD_PROBE)
   add_executable(echo_probe native_test/echo_probe.cc)
   target_link_libraries(echo_probe PRIVATE telosnex_audio)
   target_include_directories(echo_probe PRIVATE src)
+  set(TSNX_FIXTURES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/native_test/fixtures"
+    CACHE PATH "Where the test executables read native_test/fixtures")
   target_compile_definitions(echo_probe PRIVATE
-    TSNX_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/native_test/fixtures")
+    TSNX_FIXTURES="${TSNX_FIXTURES_DIR}")
 endif()
 
 if(TSNX_BUILD_TESTS)
