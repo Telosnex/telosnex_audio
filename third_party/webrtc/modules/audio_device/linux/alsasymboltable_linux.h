@@ -54,6 +54,11 @@ namespace adm_linux_alsa {
   X(snd_pcm_set_params)                        \
   X(snd_pcm_get_params)                        \
   X(snd_pcm_start)                             \
+  X(snd_pcm_status)                            \
+  X(snd_pcm_status_malloc)                     \
+  X(snd_pcm_status_free)                       \
+  X(snd_pcm_status_get_state)                  \
+  X(snd_pcm_status_get_delay)                  \
   X(snd_pcm_stream)                            \
   X(snd_pcm_frames_to_bytes)                   \
   X(snd_pcm_bytes_to_frames)                   \

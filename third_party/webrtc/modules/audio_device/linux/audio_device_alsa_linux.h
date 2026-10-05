@@ -145,6 +145,8 @@ class AudioDeviceLinuxALSA : public AudioDeviceGeneric {
                          char* enumDeviceName = NULL,
                          int32_t ednLen = 0) const;
   int32_t ErrorRecovery(int32_t error, snd_pcm_t* deviceHandle);
+  void ResetHardwareClockObservation(bool playout);
+  void DeliverHardwareClockObservation(bool playout);
 
   bool KeyPressed() const;
 
@@ -204,6 +206,18 @@ class AudioDeviceLinuxALSA : public AudioDeviceGeneric {
 
   snd_pcm_sframes_t _recordingDelay;
   snd_pcm_sframes_t _playoutDelay;
+
+  // TSNX: public ALSA status exposes hw_ptr-equivalent positions through the
+  // atomic appl_ptr +/- delay relation. App counters and generations are reset
+  // after prepare/recovery so estimator windows never cross discontinuities.
+  snd_pcm_status_t* _recordingClockStatus;
+  snd_pcm_status_t* _playoutClockStatus;
+  int64_t _recordingAppFrames;
+  int64_t _playoutAppFrames;
+  int64_t _recordingLastClockObservationNs;
+  int64_t _playoutLastClockObservationNs;
+  uint32_t _recordingClockGeneration;
+  uint32_t _playoutClockGeneration;
 
   char _oldKeyState[32];
 #if defined(WEBRTC_USE_X11)
