@@ -342,6 +342,12 @@ int32_t AudioDeviceBuffer::DeliverRecordedData() {
   return 0;
 }
 
+void AudioDeviceBuffer::DeliverHardwareClockObservation(
+    const AudioHardwareClockObservation& observation) {
+  if (audio_transport_cb_)
+    audio_transport_cb_->OnAudioHardwareClockObservation(observation);
+}
+
 int32_t AudioDeviceBuffer::RequestPlayoutData(size_t samples_per_channel) {
   TRACE_EVENT1("webrtc", "AudioDeviceBuffer::RequestPlayoutData",
                "samples_per_channel", samples_per_channel);
