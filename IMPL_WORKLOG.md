@@ -1,7 +1,8 @@
 # telosnex_audio implementation worklog
 
 ADR: ~/dev/telosnex/docs/design/ADR_telosnex_audio.md (ACCEPTED 2026-10-04).
-Scope: workplan steps 1-6 (done), then 7 onward.
+Scope: package code through step 9. App migration (steps 5-6) is not done.
+Hardware gates remain open as listed below.
 
 ## Facts
 - WebRTC checkout: ~/dev/libwebrtc/build/src at webrtc-sdk b1800a61db (working tree has fork
@@ -96,3 +97,15 @@ Status (2026-10-05):
   Firefox is not installed. App side (step 6 flag, then remove LocalPcmPlayout/just_audio) not started.
 - flutter test web serves package:telosnex_audio/ at /packages/telosnex_audio/, not Flutter assets:
   engine_web falls back to that URL when the asset 404s. test/fixtures links to native_test/fixtures.
+
+## Owner follow-up (2026-10-05)
+- Created private GitHub repository Telosnex/telosnex_audio with origin. History scanned with
+  gitleaks before the first push: no leaks in 30 commits. Repository visibility does not assign
+  a license to Telosnex's own code.
+- Risk 6: tool/licenses.dart builds LICENSE in Flutter's multi-component format. It includes all
+  12 vendored license, COPYING, PATENTS, and NOTICE files, including WebRTC's embedded dependencies.
+  tool/vendor.dart regenerates it. CI checks freshness. test/licenses_test.dart checks complete
+  upstream text and rejects an unlisted license. A Flutter web build's NOTICES includes every
+  upstream text verbatim. The app receives these notices when it adds the package dependency.
+- Restored the fork freeze note in the app maintenance document. The ADR names implemented tests
+  and records pending gates. The owner waived step 10 latency and web echo checks, not billing.
