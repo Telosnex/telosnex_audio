@@ -5,6 +5,13 @@
 // VOICE_RECOGNITION preset, which has no platform echo canceller; the APM's
 // AEC3 removes the echo.
 //
+// Devices are the routes of android_routes.h, from AudioManager through
+// JNI. The earpiece and the Bluetooth microphone put Android in
+// communication mode with USAGE_VOICE_COMMUNICATION output, only while one
+// of them is selected and a stream is open. PlayoutDevices() reads the
+// device list again when Android reported a change, and moves open streams
+// when the route for the selection changed (a headset left or came back).
+//
 // AAudio loads at run time, so the library also loads on Android 7. There,
 // Init() fails and the engine reports no device.
 #ifndef TSNX_ANDROID_AAUDIO_DEVICE_H_

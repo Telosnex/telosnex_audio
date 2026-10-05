@@ -36,6 +36,7 @@
 #endif
 #if defined(WEBRTC_ANDROID)
 #include "android/aaudio_device.h"
+#include "android/android_jni.h"
 #endif
 #include "modules/audio_mixer/output_rate_calculator.h"
 #include "rtc_base/thread.h"
@@ -746,8 +747,8 @@ int32_t Engine::StartCapture(int32_t rate, int32_t request_id) {
     auto& adm = rtc_->adm;
     if (!adm->Recording()) {
       ApplySessionProfile(/*capture=*/true);
-      if (adm->SetRecordingDevice(selected_input_) != 0 ||
-          adm->InitRecording() != 0 || adm->StartRecording() != 0)
+      if (!ApplySelectedDevice(/*input=*/true) || adm->InitRecording() != 0 ||
+          adm->StartRecording() != 0)
         result = kErrDevice;
     }
     capture_active_.store(result == kOk);
@@ -816,6 +817,31 @@ std::vector<DeviceInfo> Engine::Devices(bool input) {
   return input ? inputs_ : outputs_;
 }
 
+int Engine::DeviceIndex(bool input, const std::string& id) {
+  if (id.empty()) return -1;
+  std::lock_guard<std::mutex> lock(devices_mu_);
+  const auto& list = input ? inputs_ : outputs_;
+  for (size_t i = 0; i < list.size(); ++i)
+    if (list[i].id == id) return static_cast<int>(i);
+  return -1;
+}
+
+bool Engine::ApplySelectedDevice(bool input) {
+#if defined(WEBRTC_ANDROID)
+  // The Android device keeps the selection, also while the selected device
+  // is gone, and a selection in one direction can change the other
+  // (android_routes.h).
+  (void)input;
+  return true;
+#else
+  const int index =
+      DeviceIndex(input, input ? selected_input_ : selected_output_);
+  const int i = index < 0 ? 0 : index;
+  auto& adm = rtc_->adm;
+  return (input ? adm->SetRecordingDevice(i) : adm->SetPlayoutDevice(i)) == 0;
+#endif
+}
+
 int32_t Engine::SelectOutput(const std::string& id, int32_t request_id) {
   if (config_.manual_device) {
     Notify(static_cast<int32_t>(NotifyKind::kRequestDone), request_id, kOk);
@@ -829,29 +855,32 @@ int32_t Engine::SelectOutput(const std::string& id, int32_t request_id) {
     RefreshDevices();
     return;
 #endif
-    int index = -1;
-    {
-      std::lock_guard<std::mutex> lock(devices_mu_);
-      for (size_t i = 0; i < outputs_.size(); ++i)
-        if (outputs_[i].id == id) index = static_cast<int>(i);
-    }
+    const int index = DeviceIndex(/*input=*/false, id);
     int32_t result = kOk;
     if (index < 0) {
       result = kErrInvalidArgument;
     } else {
       auto& adm = rtc_->adm;
+#if defined(WEBRTC_ANDROID)
+      // The Android device moves its open streams itself, and only when
+      // the route changes (ADR I10 through the restart callback).
+      if (adm->SetPlayoutDevice(index) != 0) result = kErrDevice;
+      // A stream that did not open again: playout demand starts it.
+      if (!adm->Playing()) playout_running_.store(false);
+#else
       const bool was_playing = adm->Playing();
       if (was_playing) {
         MarkOutputRestart();
         adm->StopPlayout();
       }
-      selected_output_ = index;
+      selected_output_ = id;
       if (adm->SetPlayoutDevice(index) != 0) result = kErrDevice;
       if (was_playing &&
           (adm->InitPlayout() != 0 || adm->StartPlayout() != 0)) {
         result = kErrDevice;
         playout_running_.store(false);
       }
+#endif
     }
     Notify(static_cast<int32_t>(NotifyKind::kRequestDone), request_id, result);
   });
@@ -870,24 +899,25 @@ int32_t Engine::SelectInput(const std::string& id, int32_t request_id) {
            SessionSelectInput(id) ? kOk : kErrInvalidArgument);
     return;
 #endif
-    int index = -1;
-    {
-      std::lock_guard<std::mutex> lock(devices_mu_);
-      for (size_t i = 0; i < inputs_.size(); ++i)
-        if (inputs_[i].id == id) index = static_cast<int>(i);
-    }
+    const int index = DeviceIndex(/*input=*/true, id);
     int32_t result = kOk;
     if (index < 0) {
       result = kErrInvalidArgument;
     } else {
       auto& adm = rtc_->adm;
+#if defined(WEBRTC_ANDROID)
+      // A Bluetooth microphone also moves the output (android_routes.h).
+      if (adm->SetRecordingDevice(index) != 0) result = kErrDevice;
+      if (!adm->Playing()) playout_running_.store(false);
+#else
       const bool was_recording = adm->Recording();
       if (was_recording) adm->StopRecording();
-      selected_input_ = index;
+      selected_input_ = id;
       if (adm->SetRecordingDevice(index) != 0) result = kErrDevice;
       if (was_recording &&
           (adm->InitRecording() != 0 || adm->StartRecording() != 0))
         result = kErrDevice;
+#endif
     }
     Notify(static_cast<int32_t>(NotifyKind::kRequestDone), request_id, result);
   });
@@ -930,7 +960,7 @@ void Engine::UpdatePlayoutDemand() {
     device_thread_->Post([this] {
       auto& adm = rtc_->adm;
       ApplySessionProfile(capture_active_.load());
-      int32_t ok = adm->SetPlayoutDevice(selected_output_) == 0 &&
+      int32_t ok = ApplySelectedDevice(/*input=*/false) &&
                    adm->InitPlayout() == 0 && adm->StartPlayout() == 0;
       playout_running_.store(ok);
       playout_pending_.store(false);
@@ -973,6 +1003,14 @@ void Engine::UpdatePlayoutDemand() {
 #endif
     });
   }
+#if defined(WEBRTC_ANDROID)
+  // Java reported a device change: read the list now.
+  const uint32_t gen = android_jni::DevicesGeneration();
+  if (gen != android_devices_generation_) {
+    android_devices_generation_ = gen;
+    last_device_poll_ns_ = 0;
+  }
+#endif
   if (now - last_device_poll_ns_ > 2'000'000'000) {
     last_device_poll_ns_ = now;
     device_thread_->Post([this] { RefreshDevices(); });

@@ -1,0 +1,7 @@
+{
+  global:
+    tsnx_*;
+    JNI_OnLoad;
+  local:
+    *;
+};

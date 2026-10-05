@@ -54,7 +54,15 @@ Scope: workplan steps 1-6 (done), then 7 onward.
   Emulator must start detached: perl -MPOSIX -e 'fork and exit; POSIX::setsid(); exec @ARGV' emulator ...
   Native tests on device: cmake -DTSNX_FIXTURES_DIR=/data/local/tmp/fixtures; adb push binaries + fixtures.
 - Owner 2026-10-05: Android needs mic and speaker selection at about parity with libwebrtc (flutter_webrtc).
-  Not done yet. Note: earpiece and Bluetooth SCO mic need communication mode, which the AEC3/media choice avoids.
+  Owner chose (b): communication mode only while the earpiece or the Bluetooth mic is selected (ADR D6, D15).
+  Done (emulator): src/android/android_routes.* (pure rules, native tests), android_jni.* (JNI_OnLoad via
+  the plugin's System.loadLibrary on a background thread; exports.android adds JNI_OnLoad), android/ Java
+  (AudioRoutes: getDevices, setMode + setCommunicationDevice / SCO before API 31). Emulator API 36: routes
+  listed through JNI, device_check PASS in profile and release (R8 keep rules). The emulator has no earpiece:
+  `adb shell setprop debug.tsnx.routes 1` adds output debug-speaker-call (speaker in communication mode);
+  dumpsys showed MODE_IN_COMMUNICATION on select and MODE_NORMAL ~1 s after streams close.
+  Open: real phone with a Bluetooth headset (ADR A.4 "Android routes"); a current-route readback in the Dart
+  API (the app's output selector waits for getCurrentAudioRoute today).
 
 ## Step 9 web (started 2026-10-05)
 Design:

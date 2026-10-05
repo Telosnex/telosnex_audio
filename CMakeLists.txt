@@ -210,8 +210,12 @@ if(APPLE)
   file(GLOB TSNX_CORE_APPLE CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/apple/*.mm)
   list(APPEND TSNX_CORE_SOURCES ${TSNX_CORE_APPLE})
 elseif(ANDROID)
-  list(APPEND TSNX_CORE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/android/aaudio_device.cc)
+  list(APPEND TSNX_CORE_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/android/aaudio_device.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/android/android_jni.cc)
 endif()
+# Route rules: pure C++, built on every host for the native tests.
+list(APPEND TSNX_CORE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/android/android_routes.cc)
 add_library(tsnx_core STATIC ${TSNX_CORE_SOURCES})
 target_include_directories(tsnx_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(tsnx_core PRIVATE ${TSNX_CORE_WARN} ${TSNX_NO_EXCEPTIONS})
@@ -230,8 +234,14 @@ if(APPLE)
     INSTALL_NAME_DIR "@rpath"
     BUILD_WITH_INSTALL_NAME_DIR ON)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR ANDROID)
+  # Android also exports JNI_OnLoad (src/android/android_jni.cc).
+  if(ANDROID)
+    set(TSNX_EXPORTS ${CMAKE_CURRENT_SOURCE_DIR}/src/export/exports.android)
+  else()
+    set(TSNX_EXPORTS ${CMAKE_CURRENT_SOURCE_DIR}/src/export/exports.linux)
+  endif()
   target_link_options(telosnex_audio PRIVATE
-    "LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/src/export/exports.linux"
+    "LINKER:--version-script=${TSNX_EXPORTS}"
     "LINKER:--gc-sections" "LINKER:-z,defs")
   target_compile_options(tsnx_webrtc PRIVATE -ffunction-sections -fdata-sections)
   target_compile_options(tsnx_core PRIVATE -ffunction-sections -fdata-sections)

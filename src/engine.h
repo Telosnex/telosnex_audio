@@ -280,8 +280,15 @@ class Engine : public EventSink {
   int64_t idle_since_ns_ = 0;
   int64_t last_delay_poll_ns_ = 0;
   int64_t last_device_poll_ns_ = 0;
-  int selected_output_ = 0;  // device thread
-  int selected_input_ = 0;   // device thread
+  // Selected device IDs ("" for none). Device thread. The ADM takes an
+  // index, and the index of a device changes when the list changes.
+  std::string selected_output_;
+  std::string selected_input_;
+  // The index of `id` in the current list, or -1.
+  int DeviceIndex(bool input, const std::string& id);
+  // Gives the ADM the selected device before it opens a stream.
+  bool ApplySelectedDevice(bool input);
+  uint32_t android_devices_generation_ = 0;  // control thread
   int session_profile_ = 0;  // device thread; iOS SessionProfile (D6)
   // iOS: moves the shared audio session to the profile for the current
   // capture state before the device starts. Device thread.

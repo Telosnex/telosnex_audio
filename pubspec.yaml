@@ -27,6 +27,13 @@ dev_dependencies:
   test: ^1.25.0
 
 flutter:
+  # Android only: the Java side of the device routes (android/). The engine
+  # itself comes from the build hook on every platform.
+  plugin:
+    platforms:
+      android:
+        package: com.telosnex.audio
+        pluginClass: TelosnexAudioPlugin
   assets:
     - path: lib/web/telosnex_audio.wasm
       platforms: [web]

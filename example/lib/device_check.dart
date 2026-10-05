@@ -44,6 +44,11 @@ Future<void> main() async {
 
 Future<void> run() async {
   final engine = await TelosnexAudio.open();
+  // Android: the plugin loads the library for JNI in the background, and
+  // the engine reads the routes when it is ready.
+  for (var i = 0; i < 20 && engine.outputs.length < 2; i++) {
+    await sleep(100);
+  }
   log('outputs: ${engine.outputs.map((d) => '${d.id}=${d.name}').join('; ')}');
   log('inputs: ${engine.inputs.map((d) => '${d.id}=${d.name}').join('; ')}');
 
@@ -110,5 +115,97 @@ Future<void> run() async {
     'seek and 2x rate',
   );
   await track.dispose();
+  if (Platform.isAndroid) await androidRoutes(engine);
   await engine.close();
+}
+
+// ADR D6, D15 on Android: route selection at parity with flutter_webrtc.
+// The earpiece and the Bluetooth microphone use communication mode; each
+// move keeps the track position (I10). Each state holds 3 s, so
+// `adb shell dumpsys audio` can show the mode.
+Future<void> androidRoutes(AudioEngine engine) async {
+  final outs = engine.outputs.map((d) => d.id).toList();
+  final ins = engine.inputs.map((d) => d.id).toList();
+  check(outs.first == 'default' && ins.first == 'default', 'default first');
+  check(outs.contains('speaker'), 'speaker listed');
+
+  final mp3 = await rootBundle.load('assets/speech.mp3');
+  final track = await engine.createMp3Track(mp3.buffer.asUint8List());
+  track
+    ..setGain(0.15)
+    ..play();
+  await sleep(1000);
+  await engine.startCapture(const CaptureConfig());
+  var frames = 0;
+  final sub = engine.capture.listen((f) => frames += f.pcm.length);
+
+  final sw = Stopwatch()..start();
+  Future<void> route(String what, Future<void> Function() select) async {
+    // The clip is 16.6 s: start each step early enough to hold 3 s.
+    if (track.state.position > const Duration(seconds: 9)) {
+      track.seek(const Duration(seconds: 1));
+      await sleep(300);
+    }
+    final p0 = track.state.position;
+    final f0 = frames;
+    final t0 = sw.elapsedMilliseconds;
+    try {
+      await select();
+    } catch (e) {
+      check(false, '$what: $e');
+      return;
+    }
+    final selectMs = sw.elapsedMilliseconds - t0;
+    log("ROUTE $what ($selectMs ms)");
+    await sleep(3000);
+    final played = (track.state.position - p0).inMilliseconds;
+    final wall = sw.elapsedMilliseconds - t0;
+    final captured = (frames - f0) ~/ 48;
+    log(
+      '$what: track moved $played ms in $wall ms (gap ${wall - played} ms), '
+      'captured $captured ms, delay ${engine.outputDelay.inMilliseconds} ms',
+    );
+    check(track.state.status == TrackStatus.playing, '$what: still playing');
+    check(played <= wall + 60, '$what: no skip');
+    check(played >= wall - 1500, '$what: gap under 1.5 s');
+    check(captured >= wall - 1500, '$what: capture continues');
+  }
+
+  if (outs.contains('earpiece')) {
+    await route('output earpiece', () => engine.selectOutput('earpiece'));
+  }
+  // adb shell setprop debug.tsnx.routes 1: the speaker in communication
+  // mode, for devices without an earpiece (the emulator).
+  if (outs.contains('debug-speaker-call')) {
+    await route(
+      'output debug-speaker-call',
+      () => engine.selectOutput('debug-speaker-call'),
+    );
+  }
+  await route('output speaker', () => engine.selectOutput('speaker'));
+  final mic = ins.firstWhere(
+    (id) => id.startsWith('microphone'),
+    orElse: () => '',
+  );
+  if (mic.isNotEmpty) {
+    await route('input $mic', () => engine.selectInput(mic));
+  }
+  if (ins.contains('bluetooth')) {
+    await route('input bluetooth', () => engine.selectInput('bluetooth'));
+    await route('output speaker', () => engine.selectOutput('speaker'));
+  }
+  await route('output default', () => engine.selectOutput('default'));
+  // Communication mode ends after the last stream closes.
+  if (outs.contains('debug-speaker-call')) {
+    await route(
+      'output debug-speaker-call',
+      () => engine.selectOutput('debug-speaker-call'),
+    );
+  }
+  await sub.cancel();
+  await engine.stopCapture();
+  await track.dispose();
+  log('ROUTE idle: streams close after the idle stop');
+  await sleep(6000);
+  log('ROUTE idle: done');
 }
