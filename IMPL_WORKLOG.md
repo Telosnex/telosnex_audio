@@ -48,3 +48,8 @@ Scope: workplan steps 1-6 (done), then 7 onward.
   was locked, so lib/device_check.dart has not run. Run: flutter build ios --profile -t
   lib/device_check.dart; devicectl install build/ios/Profile-iphoneos/Runner.app; launch --console.
   I10 rewind + test (31 native tests). Android not started: needs owner decisions (see report).
+- Step 8 Android (code done, emulator only): owner chose AEC3 (2026-10-05). src/android/aaudio_device.cc,
+  USAGE_MEDIA always, mic VOICE_RECOGNITION, AAudio by dlopen. Emulator API 36 arm64: 31 native tests,
+  echo_probe, device_check PASS. Open: armeabi-v7a (owner), real-phone echo (R13) and route matrix.
+  Emulator must start detached: perl -MPOSIX -e 'fork and exit; POSIX::setsid(); exec @ARGV' emulator ...
+  Native tests on device: cmake -DTSNX_FIXTURES_DIR=/data/local/tmp/fixtures; adb push binaries + fixtures.
