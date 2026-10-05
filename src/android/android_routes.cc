@@ -52,9 +52,47 @@ std::string OutputName(const RawDevice& d) {
     case kWiredHeadset:
     case kWiredHeadphones:
       return "Wired headset";
+    case kUsbDevice:
+    case kUsbAccessory:
+    case kUsbHeadset:
+      return NameOr(d, "USB audio");
     default:
       return NameOr(d, "Bluetooth");
   }
+}
+
+DeviceKind KindOf(int type) {
+  switch (type) {
+    case kSpeaker:
+      return DeviceKind::kSpeaker;
+    case kEarpiece:
+      return DeviceKind::kEarpiece;
+    case kWiredHeadset:
+    case kWiredHeadphones:
+      return DeviceKind::kWired;
+    case kUsbDevice:
+    case kUsbAccessory:
+    case kUsbHeadset:
+      return DeviceKind::kUsb;
+    case kBluetoothSco:
+    case kBluetoothA2dp:
+    case kHearingAid:
+    case kBleHeadset:
+    case kBleSpeaker:
+      return DeviceKind::kBluetooth;
+    case kBuiltinMic:
+      return DeviceKind::kMicrophone;
+    default:
+      return DeviceKind::kOther;
+  }
+}
+
+const RawDevice* ById(const std::vector<RawDevice>& devices, bool sink,
+                      int id) {
+  if (id == 0) return nullptr;
+  for (const RawDevice& d : devices)
+    if (d.sink == sink && d.id == id) return &d;
+  return nullptr;
 }
 
 std::string InputName(const RawDevice& d) {
@@ -144,7 +182,7 @@ RouteLists ListRoutes(const std::vector<RawDevice>& devices,
   }
   if (wired) r.outputs.push_back({"wired-headset", OutputName(*wired)});
   if (auto* d = Find(devices, true, kUsbOut))
-    r.outputs.push_back({"usb", NameOr(*d, "USB audio")});
+    r.outputs.push_back({"usb", OutputName(*d)});
   if (auto* d = Find(devices, true, kBluetoothMediaOut))
     r.outputs.push_back({"bluetooth", OutputName(*d)});
   else if (auto* d = Find(devices, true, kBluetoothCallOut))
@@ -238,6 +276,26 @@ Plan MakePlan(const Selection& selection,
     }
   }
   return p;
+}
+
+DeviceInfo CurrentOutput(const Selection& selection,
+                         const std::vector<RawDevice>& devices) {
+  const Plan p = MakePlan(selection, devices);
+  if (auto* d = ById(devices, true, p.output_device))
+    return {selection.output, OutputName(*d), KindOf(d->type)};
+  if (auto* d = MediaDefaultOut(devices))
+    return {"default", OutputName(*d), KindOf(d->type)};
+  return {"default", "System default", DeviceKind::kOther};
+}
+
+DeviceInfo CurrentInput(const Selection& selection,
+                        const std::vector<RawDevice>& devices) {
+  const Plan p = MakePlan(selection, devices);
+  if (auto* d = ById(devices, false, p.input_device))
+    return {selection.input, InputName(*d), KindOf(d->type)};
+  if (auto* d = DefaultIn(devices))
+    return {"default", InputName(*d), KindOf(d->type)};
+  return {"default", "System default", DeviceKind::kOther};
 }
 
 }  // namespace tsnx::android_routes

@@ -6,6 +6,11 @@
 //
 //   echo_probe [seconds] [--no-aec] [--gain g] [--alsa | --pulse]
 //              [--clock observe|control] [--device <id for both>]
+//   echo_probe --routes [--apple-vp | --alsa | --pulse]
+//
+// --routes selects each device and checks the current device (ADR D15),
+// then exits: 0 if each selection shows.
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -28,7 +33,14 @@ static std::vector<uint8_t> ReadFile(const char* path) {
   return v;
 }
 
+static std::atomic<int> g_done{0};
+static std::atomic<int> g_failed{0};
+
 static void OnNotify(int32_t kind, int32_t id, int64_t value) {
+  if (kind == TSNX_NOTIFY_REQUEST_DONE) {
+    if (value != 0) g_failed.fetch_add(1);
+    g_done.fetch_add(1);
+  }
   if (kind == TSNX_NOTIFY_REQUEST_DONE && value != 0)
     std::fprintf(stderr, "request %d failed: %lld\n", id, (long long)value);
   if (kind == TSNX_NOTIFY_ENGINE_ERROR)
@@ -44,8 +56,10 @@ int main(int argc, char** argv) {
   int backend = 0;
   int clock = 0;
   const char* device = nullptr;
+  bool routes = false;
   for (int i = 1; i < argc; ++i) {
-    if (!std::strcmp(argv[i], "--no-aec")) aec = false;
+    if (!std::strcmp(argv[i], "--routes")) routes = true;
+    else if (!std::strcmp(argv[i], "--no-aec")) aec = false;
     else if (!std::strcmp(argv[i], "--apple-vp")) vp = true;
     else if (!std::strcmp(argv[i], "--ns")) ns = true;
     else if (!std::strcmp(argv[i], "--gain") && i + 1 < argc) gain = std::atof(argv[++i]);
@@ -77,6 +91,43 @@ int main(int argc, char** argv) {
     for (int i = 0; i < tsnx_device_count(e, k); ++i)
       if (tsnx_device_get(e, k, i, id, sizeof id, name, sizeof name) == 0)
         std::fprintf(stderr, "%s[%d] %s (id %s)\n", k ? "in" : "out", i, name, id);
+  auto current = [&](int k, char* cid) {
+    char cname[256];
+    int32_t kind = -1;
+    if (tsnx_device_current(e, k, cid, 256, cname, sizeof cname, &kind) != 0) {
+      std::fprintf(stderr, "current %s: none\n", k ? "in" : "out");
+      cid[0] = 0;
+      return;
+    }
+    std::fprintf(stderr, "current %s: %s (id %s, kind %d)\n", k ? "in" : "out",
+                 cname, cid, kind);
+  };
+  char cid[256];
+  current(0, cid);
+  current(1, cid);
+  if (routes) {
+    int bad = 0;
+    for (int k = 0; k < 2; ++k) {
+      const int n = tsnx_device_count(e, k);
+      for (int i = 0; i <= n; ++i) {
+        // The last round selects "default" again.
+        if (i < n) tsnx_device_get(e, k, i, id, sizeof id, name, sizeof name);
+        else std::strcpy(id, "default");
+        const int before = g_done.load();
+        tsnx_device_select(e, k, id, 100 + i);
+        for (int w = 0; w < 500 && g_done.load() == before; ++w)
+          std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        std::fprintf(stderr, "select %s %s -> ", k ? "in" : "out", id);
+        current(k, cid);
+        if (std::strcmp(cid, id) != 0) ++bad;
+      }
+    }
+    std::fprintf(stderr, "%s: %d mismatches, %d failed requests\n",
+                 bad || g_failed.load() ? "ROUTES FAIL" : "ROUTES PASS", bad,
+                 g_failed.load());
+    tsnx_engine_close(e);
+    return bad || g_failed.load() ? 1 : 0;
+  }
 
   if (device) {
     tsnx_device_select(e, 0, device, 3);

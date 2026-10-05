@@ -185,6 +185,13 @@ void engineCases(
     await engine.stopCapture();
   });
 
+  test('the manual device has no current devices', () async {
+    expect(engine.currentOutput, isNull);
+    expect(engine.currentInput, isNull);
+    await engine.selectOutput('default');
+    expect(engine.currentOutput, isNull);
+  });
+
   test('eight tracks at most; dispose frees a slot', () async {
     const fmt = PcmFormat(sampleRate: 16000, channels: 1);
     final tracks = [for (var i = 0; i < 8; i++) engine.createTrack(fmt)];

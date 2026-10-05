@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "clock/hardware_clock.h"
+#include "device_info.h"
 #include "track.h"
 #include "util/retirer.h"
 #include "util/spsc_ring.h"
@@ -73,11 +74,6 @@ struct EngineConfig {
   int linux_audio_backend = 0;
   // Seconds of idle output before the output device stops (platform only).
   double idle_stop_seconds = 3.0;
-};
-
-struct DeviceInfo {
-  std::string id;
-  std::string name;
 };
 
 struct CaptureBlock {
@@ -136,6 +132,12 @@ class Engine : public EventSink {
   // Copies up to `max_blocks` capture blocks. Returns the count.
   int32_t ReadCapture(CaptureBlock* out, int32_t max_blocks);
   std::vector<DeviceInfo> Devices(bool input);
+  // The device in use (ADR D15): the entry of Devices() in effect (the
+  // selection, or "default" when the selection follows the system or its
+  // device is gone), with the name and kind of the device that plays or
+  // records. False without a device (manual) or when the platform does
+  // not say. Selections update it before their request completes.
+  bool CurrentDevice(bool input, DeviceInfo* out);
   int32_t capture_dropped() const { return capture_dropped_.load(); }
 
   // ---- Manual device (tests) ----
@@ -275,6 +277,10 @@ class Engine : public EventSink {
   std::mutex devices_mu_;
   std::vector<DeviceInfo> inputs_;
   std::vector<DeviceInfo> outputs_;
+  DeviceInfo current_input_;
+  DeviceInfo current_output_;
+  bool has_current_input_ = false;
+  bool has_current_output_ = false;
   std::atomic<bool> playout_running_{false};
   std::atomic<bool> playout_pending_{false};
   int64_t idle_since_ns_ = 0;
@@ -288,7 +294,13 @@ class Engine : public EventSink {
   int DeviceIndex(bool input, const std::string& id);
   // Gives the ADM the selected device before it opens a stream.
   bool ApplySelectedDevice(bool input);
-  uint32_t android_devices_generation_ = 0;  // control thread
+  // Selects entry `index` of the engine's list in the ADM. Windows: the
+  // engine's list has "default" first, which the ADM's list does not.
+  int32_t AdmSelect(bool input, int index);
+  // The current device from the lists and the selection (device thread).
+  bool ResolveCurrent(bool input, const std::vector<DeviceInfo>& list,
+                      DeviceInfo* out);
+  uint32_t devices_generation_ = 0;  // control thread
   int session_profile_ = 0;  // device thread; iOS SessionProfile (D6)
   // iOS: moves the shared audio session to the profile for the current
   // capture state before the device starts. Device thread.

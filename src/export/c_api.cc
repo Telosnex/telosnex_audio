@@ -10,6 +10,21 @@ struct tsnx_engine {
 
 static_assert(sizeof(tsnx_track_state) == sizeof(tsnx::TrackStateWords));
 static_assert(sizeof(tsnx_capture_block) == sizeof(tsnx::CaptureBlock));
+static_assert(static_cast<int>(tsnx::DeviceKind::kOther) ==
+                  TSNX_DEVICE_KIND_OTHER &&
+              static_cast<int>(tsnx::DeviceKind::kSpeaker) ==
+                  TSNX_DEVICE_KIND_SPEAKER &&
+              static_cast<int>(tsnx::DeviceKind::kEarpiece) ==
+                  TSNX_DEVICE_KIND_EARPIECE &&
+              static_cast<int>(tsnx::DeviceKind::kMicrophone) ==
+                  TSNX_DEVICE_KIND_MICROPHONE &&
+              static_cast<int>(tsnx::DeviceKind::kWired) ==
+                  TSNX_DEVICE_KIND_WIRED &&
+              static_cast<int>(tsnx::DeviceKind::kUsb) == TSNX_DEVICE_KIND_USB &&
+              static_cast<int>(tsnx::DeviceKind::kBluetooth) ==
+                  TSNX_DEVICE_KIND_BLUETOOTH &&
+              static_cast<int>(tsnx::DeviceKind::kAirPlay) ==
+                  TSNX_DEVICE_KIND_AIRPLAY);
 
 namespace {
 tsnx::Engine* E(tsnx_engine* e) { return e ? e->engine.get() : nullptr; }
@@ -25,9 +40,11 @@ int64_t MapWrite(int64_t r) {
       return r;
   }
 }
+// Truncates at a UTF-8 character boundary: Dart rejects a cut character.
 void CopyStr(const std::string& s, char* out, int32_t cap) {
   if (!out || cap <= 0) return;
-  const size_t n = std::min<size_t>(s.size(), static_cast<size_t>(cap - 1));
+  size_t n = std::min<size_t>(s.size(), static_cast<size_t>(cap - 1));
+  while (n > 0 && n < s.size() && (s[n] & 0xC0) == 0x80) --n;
   std::memcpy(out, s.data(), n);
   out[n] = 0;
 }
@@ -195,6 +212,18 @@ TSNX_EXPORT int32_t tsnx_device_get(tsnx_engine* e, int32_t kind,
     return TSNX_ERR_INVALID_ARGUMENT;
   CopyStr(list[index].id, id, id_cap);
   CopyStr(list[index].name, name, name_cap);
+  return TSNX_OK;
+}
+TSNX_EXPORT int32_t tsnx_device_current(tsnx_engine* e, int32_t kind,
+                                        char* id, int32_t id_cap, char* name,
+                                        int32_t name_cap,
+                                        int32_t* device_kind) {
+  if (!E(e) || !device_kind) return TSNX_ERR_INVALID_ARGUMENT;
+  tsnx::DeviceInfo d;
+  if (!E(e)->CurrentDevice(kind == 1, &d)) return TSNX_ERR_DEVICE;
+  CopyStr(d.id, id, id_cap);
+  CopyStr(d.name, name, name_cap);
+  *device_kind = static_cast<int32_t>(d.kind);
   return TSNX_OK;
 }
 TSNX_EXPORT int32_t tsnx_device_select(tsnx_engine* e, int32_t kind,

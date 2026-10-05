@@ -220,11 +220,71 @@ final class AudioDevice {
   String toString() => 'AudioDevice($name)';
 }
 
+/// The kind of an audio device. [other] where the platform does not say
+/// (Windows, Linux, and web).
+enum AudioDeviceKind {
+  other,
+
+  /// The built-in speaker.
+  speaker,
+
+  /// The phone earpiece.
+  earpiece,
+
+  /// A built-in microphone.
+  microphone,
+
+  /// Wired headphones or a wired headset.
+  wired,
+  usb,
+  bluetooth,
+  airPlay,
+}
+
+/// The device that one direction of the engine uses now (ADR D15).
+@immutable
+final class CurrentDevice {
+  const CurrentDevice({
+    required this.id,
+    required this.name,
+    required this.kind,
+  });
+
+  /// The entry of [AudioEngine.outputs] or [AudioEngine.inputs] in effect:
+  /// the selected one, or `default` when the selection follows the system
+  /// or its device is gone.
+  final String id;
+
+  /// The device that plays or records. For `default`, the device the
+  /// system picked.
+  final String name;
+  final AudioDeviceKind kind;
+
+  @override
+  bool operator ==(Object other) =>
+      other is CurrentDevice &&
+      other.id == id &&
+      other.name == name &&
+      other.kind == kind;
+  @override
+  int get hashCode => Object.hash(id, name, kind);
+  @override
+  String toString() => 'CurrentDevice($id: $name, ${kind.name})';
+}
+
+/// The device lists or a current device changed.
 @immutable
 final class RouteChange {
-  const RouteChange({required this.inputs, required this.outputs});
+  const RouteChange({
+    required this.inputs,
+    required this.outputs,
+    this.currentInput,
+    this.currentOutput,
+  });
   final List<AudioDevice> inputs;
   final List<AudioDevice> outputs;
+  final CurrentDevice? currentInput;
+  final CurrentDevice? currentOutput;
 }
 
 /// One playback source in the engine mixer (ADR D7).
@@ -266,6 +326,17 @@ abstract interface class AudioEngine {
   List<AudioDevice> get outputs;
   Future<void> selectInput(String deviceId);
   Future<void> selectOutput(String deviceId);
+
+  /// The output in use. [selectOutput] updates it before it completes;
+  /// other changes (a headset, the system default) arrive on
+  /// [routeChanges]. Null with a [ManualDevice] or when the platform does
+  /// not say. On Android, selecting the Bluetooth microphone also moves
+  /// the output.
+  CurrentDevice? get currentOutput;
+
+  /// The microphone in use, as [currentOutput]. On iOS, null while capture
+  /// is off: the media audio session has no input route.
+  CurrentDevice? get currentInput;
   Stream<RouteChange> get routeChanges;
 
   /// Output delay reported by the device.

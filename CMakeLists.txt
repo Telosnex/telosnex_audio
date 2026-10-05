@@ -213,6 +213,8 @@ elseif(ANDROID)
   list(APPEND TSNX_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/android/aaudio_device.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/android/android_jni.cc)
+elseif(WIN32)
+  list(APPEND TSNX_CORE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/win/win_devices.cc)
 endif()
 # Route rules: pure C++, built on every host for the native tests.
 list(APPEND TSNX_CORE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/android/android_routes.cc)

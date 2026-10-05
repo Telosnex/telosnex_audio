@@ -279,6 +279,37 @@ final class _NativeEngine implements AudioEngine {
     }
   }
 
+  CurrentDevice? _current(int kind) {
+    _checkOpen();
+    final id = calloc<Uint8>(512).cast<Utf8>();
+    final name = calloc<Uint8>(512).cast<Utf8>();
+    final deviceKind = calloc<Int32>();
+    try {
+      if (tsnxDeviceCurrent(_e, kind, id, 512, name, 512, deviceKind) != 0) {
+        return null;
+      }
+      final k = deviceKind.value;
+      return CurrentDevice(
+        id: id.toDartString(),
+        name: name.toDartString(),
+        kind: k >= 0 && k < AudioDeviceKind.values.length
+            ? AudioDeviceKind.values[k]
+            : AudioDeviceKind.other,
+      );
+    } finally {
+      calloc
+        ..free(id)
+        ..free(name)
+        ..free(deviceKind);
+    }
+  }
+
+  @override
+  CurrentDevice? get currentInput => _current(1);
+
+  @override
+  CurrentDevice? get currentOutput => _current(0);
+
   @override
   List<AudioDevice> get inputs => _devices(1);
 
@@ -386,7 +417,14 @@ final class _NativeEngine implements AudioEngine {
           c.completeError(AudioEngineException(value, _errorText(value)));
         }
       case _kDevicesChanged:
-        _routes.add(RouteChange(inputs: inputs, outputs: outputs));
+        _routes.add(
+          RouteChange(
+            inputs: inputs,
+            outputs: outputs,
+            currentInput: currentInput,
+            currentOutput: currentOutput,
+          ),
+        );
       case _kEngineError:
         developer.log('engine error $value', name: 'telosnex_audio');
     }

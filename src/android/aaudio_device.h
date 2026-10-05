@@ -22,14 +22,28 @@
 #include "api/audio/audio_device.h"
 #include "api/environment/environment.h"
 #include "api/scoped_refptr.h"
+#include "device_info.h"
 
 namespace tsnx {
 
+// The routes in use for the selection (android_routes::CurrentOutput and
+// CurrentInput). Device thread.
+class AAudioRoutes {
+ public:
+  virtual DeviceInfo CurrentOutput() = 0;
+  virtual DeviceInfo CurrentInput() = 0;
+
+ protected:
+  ~AAudioRoutes() = default;
+};
+
 // `on_output_restart` runs (on any thread) when the output stream is lost
 // and reopens, for example after a headset is plugged in. The audio in the
-// old stream's buffer was never heard (ADR I10).
+// old stream's buffer was never heard (ADR I10). `routes` is valid while
+// the module lives.
 webrtc::scoped_refptr<webrtc::AudioDeviceModule> CreateAAudioAdm(
-    const webrtc::Environment& env, std::function<void()> on_output_restart);
+    const webrtc::Environment& env, std::function<void()> on_output_restart,
+    AAudioRoutes** routes);
 
 }  // namespace tsnx
 

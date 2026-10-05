@@ -163,3 +163,56 @@ TEST(AndroidRoutesDebugSpeakerCall) {
   CHECK_EQ(p.communication_device, 2);
   CHECK_EQ(p.output_device, 2);
 }
+
+TEST(AndroidRoutesCurrentFollowsTheSelection) {
+  using tsnx::DeviceKind;
+  const auto d = PhoneWithHeadset();
+  // Nothing selected: Android plays media to the A2DP headset.
+  Selection s;
+  auto out = CurrentOutput(s, d);
+  CHECK(out.id == "default" && out.name == "Pixel Buds" &&
+        out.kind == DeviceKind::kBluetooth);
+  auto in = CurrentInput(s, d);
+  CHECK(in.id == "default" && in.kind == DeviceKind::kMicrophone);
+
+  s = SelectOutput(s, "earpiece");
+  out = CurrentOutput(s, d);
+  CHECK(out.id == "earpiece" && out.name == "Earpiece" &&
+        out.kind == DeviceKind::kEarpiece);
+
+  // The Bluetooth microphone moves the output to the headset.
+  s = SelectInput(s, "bluetooth");
+  out = CurrentOutput(s, d);
+  in = CurrentInput(s, d);
+  CHECK(out.id == "bluetooth" && out.kind == DeviceKind::kBluetooth);
+  CHECK(in.id == "bluetooth" && in.name == "Pixel Buds" &&
+        in.kind == DeviceKind::kBluetooth);
+
+  s = SelectInput(SelectOutput(s, "speaker"), "microphone-back");
+  CHECK(CurrentOutput(s, d).id == "speaker");
+  in = CurrentInput(s, d);
+  CHECK(in.id == "microphone-back" &&
+        in.name == "Built-in microphone (back)");
+}
+
+TEST(AndroidRoutesCurrentIsDefaultWhenTheDeviceIsGone) {
+  using tsnx::DeviceKind;
+  // The earpiece is selected; a wired headset replaces it.
+  Selection s = SelectOutput({}, "earpiece");
+  const auto out = CurrentOutput(s, PhoneWithWired());
+  CHECK(out.id == "default" && out.name == "Wired headset" &&
+        out.kind == DeviceKind::kWired);
+  CHECK(CurrentInput(s, PhoneWithWired()).name == "Wired headset microphone");
+  // The Bluetooth headset turned off.
+  s = SelectInput({}, "bluetooth");
+  CHECK(CurrentOutput(s, Phone()).id == "default");
+  CHECK(CurrentInput(s, Phone()).id == "default");
+  // No devices (no Java).
+  CHECK(CurrentOutput({}, {}).name == "System default");
+  // A USB device without a product name.
+  auto d = Phone();
+  d.push_back({40, kUsbDevice, true, "", ""});
+  const auto usb = CurrentOutput(SelectOutput({}, "usb"), d);
+  CHECK(usb.id == "usb" && usb.name == "USB audio" &&
+        usb.kind == DeviceKind::kUsb);
+}

@@ -5,6 +5,7 @@
 #if TARGET_OS_IPHONE
 #import <AVFoundation/AVFoundation.h>
 
+#include <atomic>
 #include <cstdio>
 
 namespace tsnx {
@@ -109,6 +110,88 @@ bool SessionSelectOutput(const std::string& id) {
                                   : AVAudioSessionPortOverrideNone
                         error:&error];
   return true;
+}
+
+namespace {
+
+DeviceKind OutputKind(NSString* type) {
+  if ([type isEqualToString:AVAudioSessionPortBuiltInSpeaker])
+    return DeviceKind::kSpeaker;
+  if ([type isEqualToString:AVAudioSessionPortBuiltInReceiver])
+    return DeviceKind::kEarpiece;
+  if ([type isEqualToString:AVAudioSessionPortHeadphones] ||
+      [type isEqualToString:AVAudioSessionPortLineOut])
+    return DeviceKind::kWired;
+  if ([type isEqualToString:AVAudioSessionPortUSBAudio])
+    return DeviceKind::kUsb;
+  if ([type isEqualToString:AVAudioSessionPortBluetoothA2DP] ||
+      [type isEqualToString:AVAudioSessionPortBluetoothHFP] ||
+      [type isEqualToString:AVAudioSessionPortBluetoothLE])
+    return DeviceKind::kBluetooth;
+  if ([type isEqualToString:AVAudioSessionPortAirPlay])
+    return DeviceKind::kAirPlay;
+  return DeviceKind::kOther;
+}
+
+DeviceKind InputKind(NSString* type) {
+  if ([type isEqualToString:AVAudioSessionPortBuiltInMic])
+    return DeviceKind::kMicrophone;
+  if ([type isEqualToString:AVAudioSessionPortHeadsetMic] ||
+      [type isEqualToString:AVAudioSessionPortLineIn])
+    return DeviceKind::kWired;
+  if ([type isEqualToString:AVAudioSessionPortUSBAudio])
+    return DeviceKind::kUsb;
+  if ([type isEqualToString:AVAudioSessionPortBluetoothHFP] ||
+      [type isEqualToString:AVAudioSessionPortBluetoothLE])
+    return DeviceKind::kBluetooth;
+  return DeviceKind::kOther;
+}
+
+std::atomic<uint32_t> g_route_generation{0};
+
+}  // namespace
+
+bool SessionCurrentOutput(DeviceInfo* out) {
+  @autoreleasepool {
+    AVAudioSessionPortDescription* port =
+        [AVAudioSession sharedInstance].currentRoute.outputs.firstObject;
+    if (!port) return false;
+    const bool speaker =
+        g_speaker_override &&
+        [port.portType isEqualToString:AVAudioSessionPortBuiltInSpeaker];
+    *out = {speaker ? "speaker" : "default", Str(port.portName),
+            OutputKind(port.portType)};
+    return true;
+  }
+}
+
+bool SessionCurrentInput(DeviceInfo* out) {
+  @autoreleasepool {
+    AVAudioSession* session = [AVAudioSession sharedInstance];
+    AVAudioSessionPortDescription* port =
+        session.currentRoute.inputs.firstObject;
+    if (!port) return false;
+    AVAudioSessionPortDescription* preferred = session.preferredInput;
+    const bool selected = preferred && [preferred.UID isEqualToString:port.UID];
+    *out = {selected ? Str(port.UID) : "default", Str(port.portName),
+            InputKind(port.portType)};
+    return true;
+  }
+}
+
+uint32_t SessionRouteGeneration() {
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    // Never removed: the observer only moves a counter.
+    [[NSNotificationCenter defaultCenter]
+        addObserverForName:AVAudioSessionRouteChangeNotification
+                    object:nil
+                     queue:nil
+                usingBlock:^(NSNotification*) {
+                  g_route_generation.fetch_add(1, std::memory_order_relaxed);
+                }];
+  });
+  return g_route_generation.load(std::memory_order_relaxed);
 }
 
 bool SessionSelectInput(const std::string& id) {

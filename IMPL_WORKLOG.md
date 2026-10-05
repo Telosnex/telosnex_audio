@@ -61,8 +61,19 @@ Scope: workplan steps 1-6 (done), then 7 onward.
   listed through JNI, device_check PASS in profile and release (R8 keep rules). The emulator has no earpiece:
   `adb shell setprop debug.tsnx.routes 1` adds output debug-speaker-call (speaker in communication mode);
   dumpsys showed MODE_IN_COMMUNICATION on select and MODE_NORMAL ~1 s after streams close.
-  Open: real phone with a Bluetooth headset (ADR A.4 "Android routes"); a current-route readback in the Dart
-  API (the app's output selector waits for getCurrentAudioRoute today).
+  Open: real phone with a Bluetooth headset (ADR A.4 "Android routes").
+- Owner 2026-10-05: current-route readback on every platform. Done: AudioEngine.currentOutput/currentInput
+  (CurrentDevice: id = list entry in effect, name + AudioDeviceKind of the device in use), also on RouteChange;
+  C tsnx_device_current. Engine resolves it in RefreshDevices; selects refresh before REQUEST_DONE. Platform
+  change counters (Android JNI, iOS route notification, macOS CoreAudio listeners) trigger a refresh.
+  Every list now starts with "default": Linux index 0 renamed from "0"; Windows gets a synthesized entry that
+  maps to SetPlayoutDevice(kDefaultDevice) (before: index 0 = first endpoint, not the default). The default
+  entry is named after its device ("default (X)" -> "X"). Kinds: Android (route rules), iOS (port type),
+  macOS (transport + data source); other elsewhere.
+  Checked: native tests 43 (Mac, emulator, Linux arm64, Windows arm64); `echo_probe --routes` PASS on macOS
+  (CoreAudio + Apple VP ADMs), Linux Pulse and ALSA (root; user parallels is not in group audio), Windows;
+  device_check PASS on macOS and the emulator; web_check PASS in Chrome (JS and wasm). iOS builds; the iPhone
+  was locked, so the iOS readback has not run.
 
 ## Step 9 web (started 2026-10-05)
 Design:

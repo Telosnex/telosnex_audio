@@ -260,3 +260,24 @@ external int tsnxDeviceSelect(
   Pointer<Utf8> id,
   int requestId,
 );
+
+@Native<
+  Int32 Function(
+    Pointer<TsnxEngine>,
+    Int32,
+    Pointer<Utf8>,
+    Int32,
+    Pointer<Utf8>,
+    Int32,
+    Pointer<Int32>,
+  )
+>(symbol: 'tsnx_device_current')
+external int tsnxDeviceCurrent(
+  Pointer<TsnxEngine> e,
+  int kind,
+  Pointer<Utf8> id,
+  int idCap,
+  Pointer<Utf8> name,
+  int nameCap,
+  Pointer<Int32> deviceKind,
+);

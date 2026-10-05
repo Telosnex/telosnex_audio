@@ -150,6 +150,27 @@ TSNX_EXPORT int32_t tsnx_device_get(tsnx_engine* e, int32_t kind,
 TSNX_EXPORT int32_t tsnx_device_select(tsnx_engine* e, int32_t kind,
                                        const char* id, int32_t request_id);
 
+// Device kinds (tsnx_device_current).
+#define TSNX_DEVICE_KIND_OTHER 0
+#define TSNX_DEVICE_KIND_SPEAKER 1     // the built-in speaker
+#define TSNX_DEVICE_KIND_EARPIECE 2    // the phone earpiece
+#define TSNX_DEVICE_KIND_MICROPHONE 3  // a built-in microphone
+#define TSNX_DEVICE_KIND_WIRED 4
+#define TSNX_DEVICE_KIND_USB 5
+#define TSNX_DEVICE_KIND_BLUETOOTH 6
+#define TSNX_DEVICE_KIND_AIRPLAY 7
+
+// The device in use (ADR D15). `id` is the entry of the list in effect:
+// the selection, or "default" when the selection follows the system or its
+// device is gone. `name` and `device_kind` describe the device that plays
+// or records. TSNX_ERR_DEVICE without a device (manual) or when the
+// platform does not say. A selection updates it before its
+// TSNX_NOTIFY_REQUEST_DONE; other changes send TSNX_NOTIFY_DEVICES_CHANGED.
+TSNX_EXPORT int32_t tsnx_device_current(tsnx_engine* e, int32_t kind,
+                                        char* id, int32_t id_cap, char* name,
+                                        int32_t name_cap,
+                                        int32_t* device_kind);
+
 #ifdef __cplusplus
 }
 #endif

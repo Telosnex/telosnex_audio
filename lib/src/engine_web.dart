@@ -154,6 +154,9 @@ final class _WebEngine implements AudioEngine {
   web.MediaStream? _mic;
   web.MediaStreamAudioSourceNode? _micSource;
   String? _inputId;
+  // The sink that setSinkId accepted; null: the default.
+  String? _outputId;
+  RouteChange? _published;
   List<AudioDevice> _inputs = const [];
   List<AudioDevice> _outputs = const [
     AudioDevice(id: 'default', name: 'System default'),
@@ -257,11 +260,50 @@ final class _WebEngine implements AudioEngine {
     final media = web.window.navigator.mediaDevices;
     _listen(media, 'devicechange', (web.Event _) async {
       await _refreshDevices();
-      if (!_routes.isClosed) {
-        _routes.add(RouteChange(inputs: _inputs, outputs: _outputs));
-      }
+      _publishRoutes();
     });
     await _refreshDevices();
+    _published = _routeState();
+  }
+
+  RouteChange _routeState() => RouteChange(
+    inputs: _inputs,
+    outputs: _outputs,
+    currentInput: _current(_inputs, _inputId),
+    currentOutput: _current(_outputs, _outputId),
+  );
+
+  // Sends a RouteChange when the lists or a current device changed.
+  void _publishRoutes() {
+    if (_closed || _routes.isClosed || _manual != null) return;
+    final now = _routeState();
+    final last = _published;
+    _published = now;
+    if (last != null &&
+        _sameDevices(last.inputs, now.inputs) &&
+        _sameDevices(last.outputs, now.outputs) &&
+        last.currentInput == now.currentInput &&
+        last.currentOutput == now.currentOutput) {
+      return;
+    }
+    _routes.add(now);
+  }
+
+  static bool _sameDevices(List<AudioDevice> a, List<AudioDevice> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  // The selected entry, or "default" (the first entry) when nothing is
+  // selected or the device is gone. Browsers do not give a kind.
+  CurrentDevice? _current(List<AudioDevice> list, String? selected) {
+    if (_manual != null || list.isEmpty) return null;
+    final want = selected ?? 'default';
+    final d = list.firstWhere((d) => d.id == want, orElse: () => list.first);
+    return CurrentDevice(id: d.id, name: d.name, kind: AudioDeviceKind.other);
   }
 
   void _listen(
@@ -583,6 +625,7 @@ final class _WebEngine implements AudioEngine {
     unawaited(_resume());
     // Device labels are visible after the permission.
     await _refreshDevices();
+    _publishRoutes();
   }
 
   void _closeMic() {
@@ -642,6 +685,18 @@ final class _WebEngine implements AudioEngine {
         );
       }
     }
+    // "default" first, as on native. Firefox does not list it; there the
+    // browser picks the device.
+    for (final list in [inputs, outputs]) {
+      final i = list.indexWhere((d) => d.id == 'default');
+      if (i > 0) list.insert(0, list.removeAt(i));
+      if (i < 0 && list.isNotEmpty) {
+        list.insert(
+          0,
+          const AudioDevice(id: 'default', name: 'System default'),
+        );
+      }
+    }
     _inputs = List.unmodifiable(inputs);
     if (_canSelectOutput && outputs.isNotEmpty) {
       _outputs = List.unmodifiable(outputs);
@@ -663,14 +718,27 @@ final class _WebEngine implements AudioEngine {
   }
 
   @override
+  CurrentDevice? get currentInput {
+    _checkOpen();
+    return _current(_inputs, _inputId);
+  }
+
+  @override
+  CurrentDevice? get currentOutput {
+    _checkOpen();
+    return _current(_outputs, _outputId);
+  }
+
+  @override
   Future<void> selectInput(String deviceId) async {
     _checkOpen();
-    _inputId = deviceId;
+    _inputId = deviceId == 'default' ? null : deviceId;
     final ctx = _ctx;
     if (ctx != null && _mic != null) {
       _closeMic();
       await _openMic(ctx);
     }
+    _publishRoutes();
   }
 
   @override
@@ -687,6 +755,8 @@ final class _WebEngine implements AudioEngine {
     }
     final id = deviceId == 'default' ? '' : deviceId;
     await ctx.callMethod<JSPromise<JSAny?>>('setSinkId'.toJS, id.toJS).toDart;
+    _outputId = id.isEmpty ? null : id;
+    _publishRoutes();
   }
 
   @override

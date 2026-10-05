@@ -142,7 +142,8 @@ int64_t MonotonicNs() {
   return int64_t{ts.tv_sec} * 1000000000 + ts.tv_nsec;
 }
 
-class AAudioDevice final : public webrtc::AudioDeviceGeneric {
+class AAudioDevice final : public webrtc::AudioDeviceGeneric,
+                           public AAudioRoutes {
  public:
   explicit AAudioDevice(std::function<void()> on_output_restart)
       : on_output_restart_(std::move(on_output_restart)),
@@ -212,6 +213,15 @@ class AAudioDevice final : public webrtc::AudioDeviceGeneric {
   int32_t SetRecordingDevice(
       webrtc::AudioDeviceModule::WindowsDeviceType) override {
     return -1;
+  }
+
+  // AAudioRoutes. devices_ is as new as the last PlayoutDevices() call or
+  // stream open.
+  DeviceInfo CurrentOutput() override {
+    return routes::CurrentOutput(selection_, devices_);
+  }
+  DeviceInfo CurrentInput() override {
+    return routes::CurrentInput(selection_, devices_);
   }
 
   int32_t PlayoutIsAvailable(bool& available) override {
@@ -649,10 +659,12 @@ class AAudioDevice final : public webrtc::AudioDeviceGeneric {
 }  // namespace
 
 webrtc::scoped_refptr<webrtc::AudioDeviceModule> CreateAAudioAdm(
-    const webrtc::Environment& env, std::function<void()> on_output_restart) {
+    const webrtc::Environment& env, std::function<void()> on_output_restart,
+    AAudioRoutes** routes) {
+  auto device = std::make_unique<AAudioDevice>(std::move(on_output_restart));
+  *routes = device.get();
   auto adm = webrtc::make_ref_counted<webrtc::AudioDeviceModuleImpl>(
-      env, webrtc::AudioDeviceModule::kAndroidAAudioAudio,
-      std::make_unique<AAudioDevice>(std::move(on_output_restart)),
+      env, webrtc::AudioDeviceModule::kAndroidAAudioAudio, std::move(device),
       /*create_detached=*/true);
   adm->AttachAudioBuffer();
   return adm;

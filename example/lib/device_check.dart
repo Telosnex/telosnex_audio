@@ -51,6 +51,13 @@ Future<void> run() async {
   }
   log('outputs: ${engine.outputs.map((d) => '${d.id}=${d.name}').join('; ')}');
   log('inputs: ${engine.inputs.map((d) => '${d.id}=${d.name}').join('; ')}');
+  log('current: out ${engine.currentOutput}, in ${engine.currentInput}');
+  final out = engine.currentOutput;
+  check(
+    out != null && engine.outputs.any((d) => d.id == out.id),
+    'current output is in the list',
+  );
+  check(engine.outputs.first.id == 'default', 'outputs start with default');
 
   final mp3 = await rootBundle.load('assets/speech.mp3');
   final track = await engine.createMp3Track(mp3.buffer.asUint8List());
@@ -115,8 +122,46 @@ Future<void> run() async {
     'seek and 2x rate',
   );
   await track.dispose();
-  if (Platform.isAndroid) await androidRoutes(engine);
+  if (Platform.isAndroid) {
+    await androidRoutes(engine);
+  } else {
+    await currentRoutes(engine);
+  }
   await engine.close();
+}
+
+// ADR D15: each selection shows in currentOutput / currentInput when the
+// select completes. iOS has no input route while capture is off.
+Future<void> currentRoutes(AudioEngine engine) async {
+  final changes = <RouteChange>[];
+  final sub = engine.routeChanges.listen(changes.add);
+  for (final d in engine.outputs.take(4)) {
+    await engine.selectOutput(d.id);
+    final c = engine.currentOutput;
+    log('select output ${d.id}: $c');
+    check(c?.id == d.id, 'current output is ${d.id}');
+  }
+  await engine.selectOutput('default');
+  check(engine.currentOutput?.id == 'default', 'current output is default');
+  if (!Platform.isIOS) {
+    for (final d in engine.inputs.take(4)) {
+      await engine.selectInput(d.id);
+      final c = engine.currentInput;
+      log('select input ${d.id}: $c');
+      check(c?.id == d.id, 'current input is ${d.id}');
+    }
+    await engine.selectInput('default');
+    check(engine.currentInput?.id == 'default', 'current input is default');
+  }
+  await sleep(100);
+  await sub.cancel();
+  log('route changes: ${changes.length}');
+  if (engine.outputs.length > 1) {
+    check(
+      changes.any((c) => c.currentOutput?.id != 'default'),
+      'a route change carries the selected output',
+    );
+  }
 }
 
 // ADR D6, D15 on Android: route selection at parity with flutter_webrtc.
@@ -140,7 +185,12 @@ Future<void> androidRoutes(AudioEngine engine) async {
   final sub = engine.capture.listen((f) => frames += f.pcm.length);
 
   final sw = Stopwatch()..start();
-  Future<void> route(String what, Future<void> Function() select) async {
+  Future<void> route(
+    String what,
+    Future<void> Function() select, {
+    String? output,
+    String? input,
+  }) async {
     // The clip is 16.6 s: start each step early enough to hold 3 s.
     if (track.state.position > const Duration(seconds: 9)) {
       track.seek(const Duration(seconds: 1));
@@ -156,7 +206,16 @@ Future<void> androidRoutes(AudioEngine engine) async {
       return;
     }
     final selectMs = sw.elapsedMilliseconds - t0;
-    log("ROUTE $what ($selectMs ms)");
+    log(
+      'ROUTE $what ($selectMs ms): out ${engine.currentOutput}, '
+      'in ${engine.currentInput}',
+    );
+    if (output != null) {
+      check(engine.currentOutput?.id == output, '$what: current output');
+    }
+    if (input != null) {
+      check(engine.currentInput?.id == input, '$what: current input');
+    }
     await sleep(3000);
     final played = (track.state.position - p0).inMilliseconds;
     final wall = sw.elapsedMilliseconds - t0;
@@ -172,7 +231,11 @@ Future<void> androidRoutes(AudioEngine engine) async {
   }
 
   if (outs.contains('earpiece')) {
-    await route('output earpiece', () => engine.selectOutput('earpiece'));
+    await route(
+      'output earpiece',
+      () => engine.selectOutput('earpiece'),
+      output: 'earpiece',
+    );
   }
   // adb shell setprop debug.tsnx.routes 1: the speaker in communication
   // mode, for devices without an earpiece (the emulator).
@@ -180,26 +243,46 @@ Future<void> androidRoutes(AudioEngine engine) async {
     await route(
       'output debug-speaker-call',
       () => engine.selectOutput('debug-speaker-call'),
+      output: 'debug-speaker-call',
     );
   }
-  await route('output speaker', () => engine.selectOutput('speaker'));
+  await route(
+    'output speaker',
+    () => engine.selectOutput('speaker'),
+    output: 'speaker',
+  );
   final mic = ins.firstWhere(
     (id) => id.startsWith('microphone'),
     orElse: () => '',
   );
   if (mic.isNotEmpty) {
-    await route('input $mic', () => engine.selectInput(mic));
+    await route('input $mic', () => engine.selectInput(mic), input: mic);
   }
   if (ins.contains('bluetooth')) {
-    await route('input bluetooth', () => engine.selectInput('bluetooth'));
-    await route('output speaker', () => engine.selectOutput('speaker'));
+    await route(
+      'input bluetooth',
+      () => engine.selectInput('bluetooth'),
+      input: 'bluetooth',
+      output: 'bluetooth',
+    );
+    await route(
+      'output speaker',
+      () => engine.selectOutput('speaker'),
+      output: 'speaker',
+      input: 'default',
+    );
   }
-  await route('output default', () => engine.selectOutput('default'));
+  await route(
+    'output default',
+    () => engine.selectOutput('default'),
+    output: 'default',
+  );
   // Communication mode ends after the last stream closes.
   if (outs.contains('debug-speaker-call')) {
     await route(
       'output debug-speaker-call',
       () => engine.selectOutput('debug-speaker-call'),
+      output: 'debug-speaker-call',
     );
   }
   await sub.cancel();

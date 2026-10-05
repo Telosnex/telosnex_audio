@@ -14,6 +14,8 @@
 #include <string>
 #include <vector>
 
+#include "device_info.h"
+
 namespace tsnx::android_routes {
 
 // AudioDeviceInfo.TYPE_* values.
@@ -91,6 +93,16 @@ struct Plan {
 };
 
 Plan MakePlan(const Selection& selection, const std::vector<RawDevice>& devices);
+
+// The route in use for a selection (Engine::CurrentDevice): the selected
+// route, or "default" when the selection is "default" or its device is
+// gone. The name and kind are those of the device that plays or records;
+// for "default", the device Android picks (the name of the "default"
+// entry of ListRoutes).
+DeviceInfo CurrentOutput(const Selection& selection,
+                         const std::vector<RawDevice>& devices);
+DeviceInfo CurrentInput(const Selection& selection,
+                        const std::vector<RawDevice>& devices);
 
 }  // namespace tsnx::android_routes
 

@@ -346,4 +346,33 @@ Future<void> captureCheck(AudioEngine engine) async {
     if (d < 9000000 || d > 11000000) ordered = false;
   }
   check(ordered, 'capture timestamps step by 10 ms');
+  await deviceCheck(engine);
+}
+
+// D15 on web: the current devices follow the selection.
+Future<void> deviceCheck(AudioEngine engine) async {
+  log(
+    'devices: out ${engine.outputs.map((d) => d.id).join(', ')}; '
+    'current out ${engine.currentOutput}, in ${engine.currentInput}',
+  );
+  check(engine.outputs.first.id == 'default', 'outputs start with default');
+  check(engine.currentOutput?.id == 'default', 'current output is default');
+  if (engine.inputs.isNotEmpty) {
+    check(engine.inputs.first.id == 'default', 'inputs start with default');
+    check(engine.currentInput?.id == 'default', 'current input is default');
+  }
+  for (final d in engine.outputs.take(3)) {
+    try {
+      await engine.selectOutput(d.id);
+    } catch (e) {
+      check(false, 'selectOutput ${d.id}: $e');
+      continue;
+    }
+    check(engine.currentOutput?.id == d.id, 'current output is ${d.id}');
+  }
+  await engine.selectOutput('default');
+  check(
+    engine.currentOutput?.id == 'default',
+    'current output is default again',
+  );
 }
