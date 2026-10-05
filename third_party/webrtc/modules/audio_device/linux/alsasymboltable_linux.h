@@ -78,6 +78,7 @@ namespace adm_linux_alsa {
   X(snd_pcm_hw_params_set_channels)            \
   X(snd_pcm_hw_params_set_rate_near)           \
   X(snd_pcm_hw_params_set_buffer_size_near)    \
+  X(snd_pcm_hw_params_set_period_size_near)    \
   X(snd_card_next)                             \
   X(snd_card_get_name)                         \
   X(snd_config_update)                         \
