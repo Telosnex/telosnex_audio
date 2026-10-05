@@ -1,7 +1,8 @@
 name: CI
 
-# Native tests (plain, ThreadSanitizer, and an x86_64 compile), Dart API tests
-# through the native-assets hook, and an end-to-end example app build.
+# Native tests (macOS: plain, ThreadSanitizer, and an x86_64 compile; Linux
+# x64 and arm64; Windows x64 and an arm64 compile), Dart API tests through
+# the native-assets hook, and end-to-end example app builds.
 on:
   push:
     branches: [main]
@@ -72,6 +73,69 @@ jobs:
           nm -gU build/x64/libtelosnex_audio.dylib | awk '{print $3}' | tee /tmp/exports.txt
           ! grep -v '^_tsnx_' /tmp/exports.txt
 
+  native-linux:
+    name: Native tests / Linux ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: warp-ubuntu-2404-x64-8x
+          - arch: arm64
+            runner: warp-ubuntu-2604-arm64-8x
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: WarpBuilds/checkout@81213ffd451b920176591e3d0e495c29ce59988d # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install build tools and audio headers
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo apt-get install -y -q cmake ninja-build g++ libasound2-dev libpulse-dev
+
+      - name: Build and run native tests
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON
+          cmake --build build/test
+          ./build/test/native_test/tsnx_tests
+
+      - name: Exported symbols are tsnx_* only (ADR D5)
+        run: |
+          set -euo pipefail
+          nm -D --defined-only build/test/libtelosnex_audio.so | awk '{print $3}' | tee /tmp/exports.txt
+          ! grep -v '^tsnx_' /tmp/exports.txt
+
+  native-windows:
+    name: Native tests / Windows x64, arm64 compile
+    runs-on: warp-windows-2025-vs2026-x64-4x
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: WarpBuilds/checkout@81213ffd451b920176591e3d0e495c29ce59988d # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Build and run native tests (x64), compile arm64
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set VS=%%i
+          call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" x64 || exit /b 1
+          cmake -S . -B build\test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DTSNX_TARGET_ARCH=x64 || exit /b 1
+          cmake --build build\test || exit /b 1
+          build\test\native_test\tsnx_tests.exe || exit /b 1
+          dumpbin /exports build\test\telosnex_audio.dll > exports.txt
+          findstr /R /C:"^ *[0-9][0-9]* *[0-9A-F][0-9A-F]* [0-9A-F]" exports.txt | findstr /V /C:" tsnx_" && exit /b 1
+          call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" x64_arm64 || exit /b 1
+          cmake -S . -B build\arm64 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DTSNX_TARGET_ARCH=arm64 || exit /b 1
+          cmake --build build\arm64 --target telosnex_audio || exit /b 1
+
   dart:
     name: Dart API tests and example build / macOS arm64
     runs-on: warp-macos-15-arm64-6x
@@ -116,3 +180,48 @@ jobs:
           cd example
           flutter build macos --debug
           test -d build/macos/Build/Products/Debug/telosnex_audio_example.app/Contents/Frameworks/telosnex_audio.framework
+
+  example-desktop:
+    name: Example build / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            runner: warp-ubuntu-2404-x64-8x
+            check: test -f build/linux/x64/debug/bundle/lib/libtelosnex_audio.so
+          - os: windows
+            runner: warp-windows-2025-vs2026-x64-4x
+            check: test -f build/windows/x64/runner/Debug/telosnex_audio.dll
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: WarpBuilds/checkout@81213ffd451b920176591e3d0e495c29ce59988d # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install Linux build dependencies
+        if: matrix.os == 'linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo apt-get install -y -q cmake ninja-build clang pkg-config libgtk-3-dev \
+            libasound2-dev libpulse-dev
+
+      - name: Set up pinned Flutter SDK
+        uses: Telosnex/flutter-action@e08e50d1e5cad6433def71cc2b3a5ee716ed348e # fork of v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: 'false'
+          pub-cache: 'false'
+
+      - name: Example app builds through the hook
+        run: |
+          set -euo pipefail
+          cd example
+          flutter pub get
+          flutter build ${{ matrix.os }} --debug
+          ${{ matrix.check }}

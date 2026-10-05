@@ -34,7 +34,7 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          # Add Windows, Linux, iOS, and Android here as workplan steps 7-8 land.
+          # Add iOS and Android here as workplan step 8 lands.
           - target: macos-arm64
             runner: warp-macos-15-arm64-6x
             cmake_args: -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
@@ -43,7 +43,28 @@ jobs:
             runner: warp-macos-15-arm64-6x
             cmake_args: -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
             lib: libtelosnex_audio.dylib
+          # Linux builds run in Debian bookworm (glibc 2.36), the Raspberry Pi
+          # OS base, so one library loads on the Pi and on newer desktops.
+          - target: linux-x64
+            runner: warp-ubuntu-2404-x64-8x
+            container: debian:bookworm
+            lib: libtelosnex_audio.so
+          - target: linux-arm64
+            runner: warp-ubuntu-2604-arm64-8x
+            container: debian:bookworm
+            lib: libtelosnex_audio.so
+          - target: windows-x64
+            runner: warp-windows-2025-vs2026-x64-4x
+            vcvars: x64
+            cmake_args: -DTSNX_TARGET_ARCH=x64
+            lib: telosnex_audio.dll
+          - target: windows-arm64
+            runner: warp-windows-2025-vs2026-x64-4x
+            vcvars: x64_arm64
+            cmake_args: -DTSNX_TARGET_ARCH=arm64
+            lib: telosnex_audio.dll
     runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
     timeout-minutes: 40
     steps:
       - name: Checkout
@@ -52,17 +73,40 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Install build tools
+      - name: Install build tools (macOS)
+        if: startsWith(matrix.target, 'macos')
         run: command -v ninja || brew install ninja
 
-      - name: Build
+      - name: Install build tools (Linux)
+        if: startsWith(matrix.target, 'linux')
+        run: |
+          set -euo pipefail
+          apt-get update -q
+          apt-get install -y -q cmake ninja-build g++ libasound2-dev libpulse-dev
+
+      - name: Build (macOS, Linux)
+        if: ${{ !startsWith(matrix.target, 'windows') }}
         run: |
           set -euo pipefail
           cmake -S . -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_args }}
           cmake --build build/release --target telosnex_audio
           mkdir -p dist
           cp "build/release/${{ matrix.lib }}" "dist/${{ matrix.target }}-${{ matrix.lib }}"
-          strip -x "dist/${{ matrix.target }}-${{ matrix.lib }}"
+          case "${{ matrix.target }}" in
+            macos-*) strip -x "dist/${{ matrix.target }}-${{ matrix.lib }}" ;;
+            *) strip --strip-unneeded "dist/${{ matrix.target }}-${{ matrix.lib }}" ;;
+          esac
+
+      - name: Build (Windows)
+        if: startsWith(matrix.target, 'windows')
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set VS=%%i
+          call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.vcvars }} || exit /b 1
+          cmake -S . -B build\release -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl ${{ matrix.cmake_args }} || exit /b 1
+          cmake --build build\release --target telosnex_audio || exit /b 1
+          mkdir dist
+          copy build\release\${{ matrix.lib }} dist\${{ matrix.target }}-${{ matrix.lib }} || exit /b 1
 
       - name: Upload
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6 (Node 24)
