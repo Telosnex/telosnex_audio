@@ -44,3 +44,7 @@ Scope: workplan steps 1-6 (done), then 7 onward.
   from the Ubuntu VM (10.211.55.4:8765); the Mac's 10.211.55.2 is not reachable from it.
   build/sync_win.sh pushes the tree. Wrap prlctl in `perl -e 'alarm N; exec @ARGV'`.
   /tmp/ocr (Swift Vision) reads text from `prlctl capture` screenshots.
+- Step 8 iOS (code done, device run pending): builds for iphoneos and in the example app. The iPhone
+  was locked, so lib/device_check.dart has not run. Run: flutter build ios --profile -t
+  lib/device_check.dart; devicectl install build/ios/Profile-iphoneos/Runner.app; launch --console.
+  I10 rewind + test (31 native tests). Android not started: needs owner decisions (see report).
