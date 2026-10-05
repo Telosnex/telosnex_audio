@@ -53,3 +53,5 @@ Scope: workplan steps 1-6 (done), then 7 onward.
   echo_probe, device_check PASS. Open: armeabi-v7a (owner), real-phone echo (R13) and route matrix.
   Emulator must start detached: perl -MPOSIX -e 'fork and exit; POSIX::setsid(); exec @ARGV' emulator ...
   Native tests on device: cmake -DTSNX_FIXTURES_DIR=/data/local/tmp/fixtures; adb push binaries + fixtures.
+- Owner 2026-10-05: Android needs mic and speaker selection at about parity with libwebrtc (flutter_webrtc).
+  Not done yet. Note: earpiece and Bluetooth SCO mic need communication mode, which the AEC3/media choice avoids.
