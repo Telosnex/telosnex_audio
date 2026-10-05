@@ -83,6 +83,23 @@ std::unique_ptr<TrackStore> TrackStore::OpenMp3(const uint8_t* data,
   return store;
 }
 
+std::unique_ptr<TrackStore> TrackStore::External(int sample_rate,
+                                                 int channels, int64_t frames,
+                                                 StoreLimits limits) {
+  size_t slots = SlotsFor(Retention::kAll, limits);
+  if (frames >= 0)
+    slots = static_cast<size_t>((frames + sample_rate - 1) / sample_rate) + 1;
+  std::unique_ptr<TrackStore> store(new TrackStore(
+      sample_rate, channels, Retention::kAll, std::string(), limits, slots));
+  store->external_ = true;
+  store->requested_.assign(slots, 0);
+  if (frames >= 0) {
+    store->written_.store(frames, std::memory_order_release);
+    store->eos_.store(true, std::memory_order_release);
+  }
+  return store;
+}
+
 TrackStore::~TrackStore() { ReleaseAll(); }
 
 void TrackStore::ReleaseAll() {
@@ -144,6 +161,7 @@ int64_t TrackStore::Write(const int16_t* pcm, int64_t frames,
   if (frames <= 0) return 0;
   std::lock_guard<std::mutex> lock(mu_);
   if (eos_.load(std::memory_order_relaxed) || mp3_) return kStoreEnded;
+  // An external MP3 store is ended from the start, so this covers it.
   if (failed_.load(std::memory_order_relaxed)) return kStoreIoError;
   int64_t w = written_.load(std::memory_order_relaxed);
   if (retention_ == Retention::kUnplayed) {
@@ -275,7 +293,11 @@ bool TrackStore::Maintain(int64_t playhead, Retirer& retirer) {
     Chunk* c = slots_[s].load(std::memory_order_relaxed);
     if (!c || (c->index >= lo && c->index <= hi)) continue;
     const int64_t k = c->index;
-    if (!mp3_) {
+    if (external_) {
+      // The host has a copy of every complete chunk.
+      const bool complete = (k + 1) * chunk_frames_ <= w || eos;
+      if (!complete) continue;
+    } else if (!mp3_) {
       const bool complete = (k + 1) * chunk_frames_ <= w || eos;
       if (!complete) continue;  // the writer's tail chunk stays
       if (!spilled_[static_cast<size_t>(k)]) {
@@ -291,8 +313,19 @@ bool TrackStore::Maintain(int64_t playhead, Retirer& retirer) {
   }
 
   // Load nearest to the playhead first: pk, pk+1 .. hi, then pk-1 .. lo.
+  window_lo_ = lo;
+  window_hi_ = hi;
   auto load = [&](int64_t k) {
     if (k < 0 || k > last || SlotChunk(k)) return true;
+    if (external_) {
+      // Every chunk up to `last` exists at the host: the tail chunk is
+      // never freed, so a missing chunk is complete.
+      if (!requested_[static_cast<size_t>(k)]) {
+        requested_[static_cast<size_t>(k)] = 1;
+        requests_.push_back(k);
+      }
+      return true;
+    }
     if (!mp3_ && !spilled_[static_cast<size_t>(k)]) return true;
     Chunk* c = AllocChunk(k);
     if (!LoadChunk(k, c)) {
@@ -309,6 +342,32 @@ bool TrackStore::Maintain(int64_t playhead, Retirer& retirer) {
   for (int64_t k = pk - 1; k >= std::max<int64_t>(lo, 0); --k)
     if (!load(k)) return true;
   return changed;
+}
+
+void TrackStore::TakeRequests(std::vector<int64_t>* out) {
+  std::lock_guard<std::mutex> lock(mu_);
+  out->insert(out->end(), requests_.begin(), requests_.end());
+  requests_.clear();
+}
+
+bool TrackStore::Deliver(int64_t index, const int16_t* data, int64_t frames) {
+  std::lock_guard<std::mutex> lock(mu_);
+  if (!external_ || index < 0 ||
+      static_cast<size_t>(index) >= requested_.size())
+    return false;
+  requested_[static_cast<size_t>(index)] = 0;
+  const int64_t w = written_.load(std::memory_order_relaxed);
+  if (w <= 0 || index > (w - 1) / chunk_frames_) return false;
+  if (index < window_lo_ || index > window_hi_ || SlotChunk(index))
+    return false;
+  if (frames != ChunkFramesAt(index)) return false;
+  Chunk* c = AllocChunk(index);
+  std::memcpy(c->data, data,
+              static_cast<size_t>(frames * channels_) * sizeof(int16_t));
+  // The slot can hold a chunk from another lap of the ring only if the
+  // window is wider than the ring, which the slot count rules out.
+  Publish(index, c);
+  return true;
 }
 
 int64_t TrackStore::ResidentChunks() const {

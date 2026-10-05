@@ -4,6 +4,7 @@
 library;
 
 import 'src/engine_stub.dart'
+    if (dart.library.js_interop) 'src/engine_web.dart'
     if (dart.library.ffi) 'src/engine_native.dart'
     as impl;
 import 'src/types.dart';
@@ -12,7 +13,8 @@ export 'src/types.dart';
 
 /// Opens and checks for the engine.
 abstract final class TelosnexAudio {
-  /// True when this build has the native engine for this platform.
+  /// True when this build has the engine for this platform: the native
+  /// library, or on web, AudioWorklet and WebAssembly.
   static bool get isSupported => impl.engineSupported;
 
   static Future<AudioEngine> open({

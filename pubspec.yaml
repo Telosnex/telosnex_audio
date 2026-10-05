@@ -18,9 +18,19 @@ dependencies:
     sdk: flutter
   hooks: '>=1.0.0 <3.0.0'
   meta: ^1.16.0
+  web: ^1.1.0
 
 dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
   test: ^1.25.0
+
+flutter:
+  assets:
+    - path: lib/web/telosnex_audio.wasm
+      platforms: [web]
+    - path: lib/web/telosnex_audio_worklet.js
+      platforms: [web]
+    - path: lib/web/telosnex_audio_storage.js
+      platforms: [web]

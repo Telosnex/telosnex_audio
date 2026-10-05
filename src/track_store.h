@@ -8,6 +8,11 @@
 // Retention `.unplayed` frees chunks more than one chunk behind the playhead
 // and refuses writes more than 30 s ahead. Retention `.all` keeps a backing store so seek works
 // on the whole track: a spill file for streamed PCM, or the MP3 bytes.
+//
+// An external store (web) has its backing store outside: the host keeps a
+// copy of every write, or the MP3 bytes. Maintain() asks for the chunks it
+// lacks inside the window (TakeRequests), and the host gives them back
+// (Deliver), possibly much later.
 #ifndef TSNX_TRACK_STORE_H_
 #define TSNX_TRACK_STORE_H_
 
@@ -45,12 +50,19 @@ class TrackStore {
   // decode or the format is not supported.
   static std::unique_ptr<TrackStore> OpenMp3(const uint8_t* data, size_t size,
                                              StoreLimits limits = {});
+  // Retention::kAll store with an external backing store. `frames` >= 0: the
+  // whole track exists there already (MP3) and no chunk is in memory yet.
+  // `frames` < 0: streamed; writes come here and to the host.
+  static std::unique_ptr<TrackStore> External(int sample_rate, int channels,
+                                              int64_t frames,
+                                              StoreLimits limits = {});
   ~TrackStore();
 
   int sample_rate() const { return rate_; }
   int channels() const { return channels_; }
   Retention retention() const { return retention_; }
   bool is_mp3() const { return mp3_ != nullptr; }
+  bool external() const { return external_; }
 
   // Writer thread. Returns frames written (all of them) or a StoreError.
   int64_t Write(const int16_t* interleaved, int64_t frames, int64_t playhead,
@@ -71,6 +83,16 @@ class TrackStore {
   // backing store, spills and frees chunks outside the window. Returns true
   // if it changed anything.
   bool Maintain(int64_t playhead, Retirer& retirer);
+
+  // External stores, control thread. Moves the chunk indexes that Maintain
+  // asked for into `out`. Each index is asked once until it is delivered.
+  void TakeRequests(std::vector<int64_t>* out);
+  // External stores, control thread. Publishes a chunk from the host if it
+  // is still inside the window and not in memory. Returns true if it did.
+  // `frames` must be the chunk's full length (shorter only for the last).
+  bool Deliver(int64_t index, const int16_t* data, int64_t frames);
+  // The host lost the backing store. Reads stop; the track fails.
+  void Fail() { failed_.store(true, std::memory_order_release); }
 
   // Frees everything. The caller guarantees the audio thread no longer
   // reads this store.
@@ -118,6 +140,12 @@ class TrackStore {
   struct Mp3;
   Mp3* mp3_ = nullptr;
   std::vector<int16_t> mp3_scratch_;
+
+  bool external_ = false;
+  std::vector<uint8_t> requested_;  // external: index asked, not delivered
+  std::vector<int64_t> requests_;   // external: asked since TakeRequests
+  int64_t window_lo_ = 0;           // external: window at the last Maintain
+  int64_t window_hi_ = -1;
 };
 
 }  // namespace tsnx

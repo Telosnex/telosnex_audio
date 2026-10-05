@@ -143,3 +143,70 @@ TEST(StoreMp3FarSeekMatchesFullDecode) {
   CHECK_EQ(exact, 40);
   CHECK(s->ResidentChunks() <= 5);
 }
+
+// Web (ADR D11): an external store frees complete chunks outside the window,
+// asks the host for missing chunks once, and takes only chunks that are
+// still inside the window.
+TEST(StoreExternalAsksForMissingChunksAndTakesDeliveries) {
+  StoreLimits l;
+  l.ahead_seconds = 2;
+  l.behind_seconds = 1;
+  l.max_seconds = 60;
+  Retirer r;
+  auto s = TrackStore::External(8000, 1, -1, l);
+  CHECK(s->external());
+  std::vector<int16_t> pcm(8000 * 10 + 100);
+  for (size_t i = 0; i < pcm.size(); ++i)
+    pcm[i] = Pattern(static_cast<int64_t>(i));
+  CHECK_EQ(s->Write(pcm.data(), static_cast<int64_t>(pcm.size()), 0, r),
+           static_cast<int64_t>(pcm.size()));
+  // Window at 0: chunks 0..2. Complete chunks 3..9 go; tail chunk 10 stays.
+  s->Maintain(0, r);
+  r.Reclaim();
+  CHECK_EQ(s->ResidentChunks(), 4);
+  std::vector<int64_t> asked;
+  s->TakeRequests(&asked);
+  CHECK(asked.empty());
+
+  // Far seek to 7.5 s: window 6..9. Chunks 6..9 are asked for, once.
+  s->Maintain(60000, r);
+  r.Reclaim();
+  s->TakeRequests(&asked);
+  CHECK_EQ(asked.size(), 4u);
+  CHECK_EQ(asked[0], 7);  // the playhead chunk first
+  s->Maintain(60000, r);
+  std::vector<int64_t> again;
+  s->TakeRequests(&again);
+  CHECK(again.empty());
+  std::vector<int16_t> out(100);
+  CHECK_EQ(s->Read(60000, out.data(), 100), 0);  // starved until delivered
+
+  // Chunk 7 arrives; chunk 1 (outside the window) is refused.
+  CHECK(s->Deliver(7, pcm.data() + 7 * 8000, 8000));
+  CHECK(!s->Deliver(1, pcm.data() + 8000, 8000));
+  CHECK(!s->Deliver(8, pcm.data(), 10));  // wrong length
+  CHECK_EQ(s->Read(60000, out.data(), 100), 100);
+  for (int i = 0; i < 100; ++i) CHECK_EQ(out[i], Pattern(60000 + i));
+  // The refused chunk 8 is asked again at the next pass.
+  s->Maintain(60000, r);
+  s->TakeRequests(&again);
+  CHECK_EQ(again.size(), 1u);
+  CHECK_EQ(again[0], 8);
+}
+
+TEST(StoreExternalWholeTrackStartsEmpty) {
+  Retirer r;
+  auto s = TrackStore::External(24000, 2, 24000 * 5 + 7);
+  CHECK(s->ended());
+  CHECK_EQ(s->written(), 24000 * 5 + 7);
+  std::vector<int16_t> one(2);
+  CHECK_EQ(s->Write(one.data(), 1, 0, r), tsnx::kStoreEnded);
+  s->Maintain(0, r);
+  std::vector<int64_t> asked;
+  s->TakeRequests(&asked);
+  CHECK_EQ(asked.size(), 6u);  // 0..5, the last chunk is 7 frames
+  std::vector<int16_t> tail(14, 3);
+  CHECK(s->Deliver(5, tail.data(), 7));
+  std::vector<int16_t> out(20);
+  CHECK_EQ(s->Read(24000 * 5, out.data(), 10), 7);
+}
