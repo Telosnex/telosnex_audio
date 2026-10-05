@@ -1,7 +1,7 @@
 # telosnex_audio implementation worklog
 
 ADR: ~/dev/telosnex/docs/design/ADR_telosnex_audio.md (ACCEPTED 2026-10-04).
-Scope of this session: workplan steps 1-6.
+Scope: workplan steps 1-6 (done), then 7 onward.
 
 ## Facts
 - WebRTC checkout: ~/dev/libwebrtc/build/src at webrtc-sdk b1800a61db (working tree has fork
@@ -29,3 +29,18 @@ Scope of this session: workplan steps 1-6.
   Clock correction ported (src/clock) with fork tests; engine test engages at -2197 ppm for a 2000 ppm drift.
 - Step 4: I1 (0 allocations after warm-up), I4 (p95 12.0 ms), I5, I6, I7, I11 tests pass. TSAN clean
   incl. a concurrent render/control test. I3 holds by construction (ProcessReverseStream on the device frame).
+- Step 7 (code done; Pi echo acceptance owed): Linux (ALSA + PulseAudio by dlopen, headers from
+  libasound2-dev/libpulse-dev) and Windows (Core Audio, MSVC). Fork patches are normal commits on the
+  vendored tree: hardware clock API, ALSA capture depth, ALSA hw clock. MSVC needed two WebRTC fixes
+  (denormal disabler asm guard, AVX2 matched filter subscripts) and /permissive on audio_device_core_win.cc.
+  Native tests pass: Linux arm64 (Parallels), Linux x64 (orb tsnx-build), Debian bookworm arm64
+  (docker), Windows arm64 and x64 (Parallels). Windows echo_probe on the VM device: opens, plays,
+  captures. Linux ALSA echo_probe on the VM: opens, 10 ms period. Example app builds on Windows and
+  Linux through the hook; the Windows app runs and lists devices (OCR of a VM screenshot).
+- WARNING: re-running tool/vendor.dart wipes the local WebRTC commits; cherry-pick them again
+  (`git log --oneline -- third_party/webrtc`).
+- VM notes: prlctl exec joins its arguments into one shell string, so pass one quoted string.
+  Ubuntu VM has no logged-in user: use `su - parallels -c '...'`. Windows VM gets sources by HTTP
+  from the Ubuntu VM (10.211.55.4:8765); the Mac's 10.211.55.2 is not reachable from it.
+  build/sync_win.sh pushes the tree. Wrap prlctl in `perl -e 'alarm N; exec @ARGV'`.
+  /tmp/ocr (Swift Vision) reads text from `prlctl capture` screenshots.
