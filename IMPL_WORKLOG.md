@@ -55,3 +55,17 @@ Scope: workplan steps 1-6 (done), then 7 onward.
   Native tests on device: cmake -DTSNX_FIXTURES_DIR=/data/local/tmp/fixtures; adb push binaries + fixtures.
 - Owner 2026-10-05: Android needs mic and speaker selection at about parity with libwebrtc (flutter_webrtc).
   Not done yet. Note: earpiece and Bluetooth SCO mic need communication mode, which the AEC3/media choice avoids.
+
+## Step 9 web (started 2026-10-05)
+Design:
+- One wasm module (src/web/web_core.cc + Track, TrackStore, Sonic, SincResampler, minimp3), standalone, no Emscripten JS.
+  Built by tool/build_wasm.dart; committed under assets/web/ (hooks do not run on web).
+- assets/web/telosnex_audio_worklet.js: TsnxCore (wasm wrapper, message protocol) + processors 'telosnex-audio'
+  (engine: 1 mic input, stereo output, 480-frame FIFO over 128-frame quanta) and 'telosnex-tap' (test).
+  The same file loads as a classic script on the main thread for ManualDevice (tests).
+- assets/web/telosnex_audio_storage.js: worker = backing store (D11 web). .all PCM: Dart posts every write to it too;
+  1 s chunks go to IndexedDB. MP3: worker opens/decodes with its own wasm instance. Worklet asks for missing
+  window chunks over a MessageChannel; TrackStore "external" mode (request/deliver), testable natively.
+- Clock: render clock = AudioContext frame time. delay = baseLatency + outputLatency. Dart nowNs() from
+  getOutputTimestamp + latency. HeardPosition(nowNs) does not depend on the latency value.
+- Capture (D15 web): getUserMedia (browser AEC) into the same node; wasm resampler to the asked rate.
