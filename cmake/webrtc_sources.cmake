@@ -466,3 +466,22 @@ set(TSNX_WEBRTC_SOURCES_MACOS
   ${TSNX_WEBRTC_DIR}/modules/audio_device/mac/audio_device_utils_mac.cc
   ${TSNX_WEBRTC_DIR}/modules/audio_device/mac/audio_mixer_manager_mac.cc
 )
+set(TSNX_WEBRTC_SOURCES_LINUX
+  ${TSNX_WEBRTC_DIR}/api/task_queue/default_task_queue_factory_stdlib.cc
+  ${TSNX_WEBRTC_DIR}/rtc_base/task_queue_stdlib.cc
+  ${TSNX_WEBRTC_DIR}/modules/audio_device/linux/alsasymboltable_linux.cc
+  ${TSNX_WEBRTC_DIR}/modules/audio_device/linux/audio_device_alsa_linux.cc
+  ${TSNX_WEBRTC_DIR}/modules/audio_device/linux/audio_mixer_manager_alsa_linux.cc
+  ${TSNX_WEBRTC_DIR}/modules/audio_device/linux/latebindingsymboltable_linux.cc
+  ${TSNX_WEBRTC_DIR}/modules/audio_device/linux/audio_device_pulse_linux.cc
+  ${TSNX_WEBRTC_DIR}/modules/audio_device/linux/audio_mixer_manager_pulse_linux.cc
+  ${TSNX_WEBRTC_DIR}/modules/audio_device/linux/pulseaudiosymboltable_linux.cc
+)
+set(TSNX_WEBRTC_SOURCES_WINDOWS
+  ${TSNX_WEBRTC_DIR}/api/task_queue/default_task_queue_factory_win.cc
+  ${TSNX_WEBRTC_DIR}/rtc_base/task_queue_win.cc
+  ${TSNX_WEBRTC_DIR}/rtc_base/win32.cc
+  ${TSNX_WEBRTC_DIR}/rtc_base/win/scoped_com_initializer.cc
+  ${TSNX_WEBRTC_DIR}/rtc_base/win/windows_version.cc
+  ${TSNX_WEBRTC_DIR}/modules/audio_device/win/audio_device_core_win.cc
+)
