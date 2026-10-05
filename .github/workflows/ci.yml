@@ -2,7 +2,8 @@ name: CI
 
 # Native tests (macOS: plain, ThreadSanitizer, and an x86_64 compile; Linux
 # x64 and arm64; Windows x64 and an arm64 compile), Dart API tests through
-# the native-assets hook, and end-to-end example app builds.
+# the native-assets hook, end-to-end example app builds, and the web engine
+# (wasm core tests in Chrome and the real-time AudioWorklet check).
 on:
   push:
     branches: [main]
@@ -260,3 +261,38 @@ jobs:
           unzip -l build/app/outputs/flutter-apk/app-debug.apk | tee /tmp/apk.txt
           grep -q 'lib/arm64-v8a/libtelosnex_audio.so' /tmp/apk.txt
           grep -q 'lib/x86_64/libtelosnex_audio.so' /tmp/apk.txt
+
+  web:
+    name: Web engine / Chrome
+    runs-on: warp-macos-15-arm64-6x
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: WarpBuilds/checkout@81213ffd451b920176591e3d0e495c29ce59988d # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up pinned Flutter SDK
+        uses: Telosnex/flutter-action@e08e50d1e5cad6433def71cc2b3a5ee716ed348e # fork of v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          architecture: arm64
+          cache: 'false'
+          pub-cache: 'false'
+
+      - name: The committed wasm matches its sources
+        run: |
+          set -euo pipefail
+          flutter pub get
+          dart tool/build_wasm.dart --check
+
+      - name: Engine cases in Chrome (wasm core, storage worker)
+        run: flutter test --platform chrome test/web_engine_test.dart
+
+      - name: Real-time AudioWorklet check (ADR step 9 gate)
+        run: |
+          set -euo pipefail
+          (cd example && flutter pub get && flutter build web -t lib/web_check.dart)
+          dart tool/web_check.dart --browser chrome

@@ -93,10 +93,9 @@ Future<void> main(List<String> args) async {
     await Future.wait(jobs);
     Directory('lib/web').createSync(recursive: true);
     await _run('em++', [...objects, ..._linkFlags, '-o', _out]);
-    final version = (await Process.run('emcc', ['--version'])).stdout
-        .toString()
-        .split('\n')
-        .first;
+    final version = (await Process.run('emcc', [
+      '--version',
+    ])).stdout.toString().split('\n').first;
     File(_stamp).writeAsStringSync(
       '${const JsonEncoder.withIndent('  ').convert({'inputs': hash, 'emcc': version})}\n',
     );
@@ -124,7 +123,9 @@ String _inputHash() {
     ..._cxxSources,
     ..._cSources,
     for (final dir in ['src', 'third_party/sonic', 'third_party/minimp3'])
-      for (final f in Directory(dir).listSync(recursive: true).whereType<File>())
+      for (final f in Directory(
+        dir,
+      ).listSync(recursive: true).whereType<File>())
         if (f.path.endsWith('.h')) f.path,
     '$_webrtc/common_audio/resampler/sinc_resampler.h',
     '$_webrtc/rtc_base/memory/aligned_malloc.h',

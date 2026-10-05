@@ -11,7 +11,10 @@
 import 'dart:async';
 import 'dart:io';
 
-const _chrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+/// Chrome: CHROME_EXECUTABLE (as for Flutter), else the macOS app.
+String get _chrome =>
+    Platform.environment['CHROME_EXECUTABLE'] ??
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const _types = {
   '.html': 'text/html',
   '.js': 'text/javascript',
