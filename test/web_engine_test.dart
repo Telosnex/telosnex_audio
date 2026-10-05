@@ -4,9 +4,11 @@
 library;
 
 import 'dart:js_interop';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:telosnex_audio/telosnex_audio.dart';
+import 'package:telosnex_audio/web_testing.dart';
 import 'package:web/web.dart' as web;
 
 import 'engine_cases.dart';
@@ -27,4 +29,18 @@ void main() {
       ),
     ),
   );
+
+  // Without a user gesture the AudioContext stays suspended; commands still
+  // reach the core and show in the state.
+  test('a suspended context applies commands without rendering', () async {
+    final e = await TelosnexAudio.open();
+    addTearDown(e.close);
+    expect(debugContextState(e), 'suspended');
+    final t = e.createTrack(const PcmFormat(sampleRate: 24000, channels: 1))
+      ..write(Int16List(24000 * 3))
+      ..seek(const Duration(seconds: 2));
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    expect(t.state.position, const Duration(seconds: 2));
+    expect(t.state.writtenFrames, 24000 * 3);
+  });
 }

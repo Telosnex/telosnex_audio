@@ -133,6 +133,17 @@ final class _WebEngine implements AudioEngine {
   int _manualNowNs = 0;
   double _latencySeconds = 0;
   Timer? _latencyTimer;
+  bool _latencyFixed = false;
+
+  // Output demand (the native idle stop): the context is suspended after
+  // 3 s with nothing to play and no capture, and resumed on demand.
+  static const _idleStop = Duration(seconds: 3);
+  Timer? _idleTimer;
+  DateTime _lastDemand = DateTime.now();
+  bool _suspending = false;
+  bool _capturing = false;
+  bool _idlePosted = false;
+  String _ctxState = 'suspended';
   final List<(web.EventTarget, String, JSFunction)> _listeners = [];
 
   // Capture and devices.
@@ -232,6 +243,12 @@ final class _WebEngine implements AudioEngine {
       const Duration(seconds: 1),
       (_) => _updateLatency(),
     );
+    _ctxState = ctx.state;
+    _listen(ctx, 'statechange', (web.Event _) => _onStateChange());
+    _idleTimer = Timer.periodic(
+      const Duration(milliseconds: 500),
+      (_) => _checkIdle(),
+    );
     // Autoplay rules: the context runs after the first user gesture.
     unawaited(_resume());
     for (final type in ['pointerdown', 'keydown', 'touchend']) {
@@ -258,6 +275,7 @@ final class _WebEngine implements AudioEngine {
   }
 
   Future<void> _resume() async {
+    _lastDemand = DateTime.now();
     final ctx = _ctx;
     if (ctx == null || _closed || ctx.state == 'running') return;
     try {
@@ -265,6 +283,64 @@ final class _WebEngine implements AudioEngine {
     } catch (_) {
       // Not allowed yet; a later gesture retries.
     }
+  }
+
+  void _onStateChange() {
+    final ctx = _ctx;
+    if (ctx == null) return;
+    final was = _ctxState;
+    _ctxState = ctx.state;
+    if (was == 'running' && _ctxState != 'running') {
+      // The engine suspends only when nothing plays. Otherwise the browser
+      // stopped the output (an interruption or a device change) and the
+      // audio in its buffer was not heard (ADR I10).
+      if (!_suspending) _send(_msg('restart'));
+      _suspending = false;
+      _postIdle();
+    }
+  }
+
+  bool get _hasDemand =>
+      _capturing ||
+      _tracks.values.any((t) {
+        final w = t._words;
+        final status = w == null ? 0 : w[1].toInt();
+        return t._wantsPlay ||
+            status == TrackStatus.playing.index ||
+            status == TrackStatus.starved.index;
+      });
+
+  void _checkIdle() {
+    final ctx = _ctx;
+    if (ctx == null || _closed) return;
+    if (_hasDemand) {
+      _lastDemand = DateTime.now();
+      return;
+    }
+    if (ctx.state != 'running' ||
+        DateTime.now().difference(_lastDemand) < _idleStop) {
+      return;
+    }
+    _suspending = true;
+    unawaited(
+      ctx.suspend().toDart.then(
+        (_) {},
+        onError: (Object _) {
+          _suspending = false;
+        },
+      ),
+    );
+  }
+
+  /// Without rendering, the worklet applies commands only when asked.
+  void _postIdle() {
+    final ctx = _ctx;
+    if (ctx == null || ctx.state == 'running' || _idlePosted) return;
+    _idlePosted = true;
+    scheduleMicrotask(() {
+      _idlePosted = false;
+      if (!_closed) _node?.port.postMessage(_msg('idle'));
+    });
   }
 
   static Future<void> _loadCoreScript() async {
@@ -283,7 +359,7 @@ final class _WebEngine implements AudioEngine {
 
   void _updateLatency() {
     final ctx = _ctx;
-    if (ctx == null) return;
+    if (ctx == null || _latencyFixed) return;
     double seconds(String name) {
       final v = ctx.getProperty<JSAny?>(name.toJS);
       return v.isA<JSNumber>() ? (v! as JSNumber).toDartDouble : 0;
@@ -310,6 +386,7 @@ final class _WebEngine implements AudioEngine {
     } else {
       node.port.postMessage(msg, transfer.toJS);
     }
+    _postIdle();
   }
 
   void _toStorage(JSObject msg, [List<JSObject>? transfer]) {
@@ -336,7 +413,14 @@ final class _WebEngine implements AudioEngine {
         _lastTickNs = (m['now']! as JSNumber).toDartDouble.round();
         final s = (m['s']! as JSFloat64Array).toDart;
         for (var i = 0; i + 9 <= s.length; i += 9) {
-          _tracks[s[i].toInt()]?._words = Float64List.sublistView(s, i, i + 9);
+          final t = _tracks[s[i].toInt()];
+          if (t == null) continue;
+          t._words = Float64List.sublistView(s, i, i + 9);
+          // The status now covers the demand from play().
+          if (s[i + 1] != TrackStatus.idle.index &&
+              s[i + 1] != TrackStatus.paused.index) {
+            t._wantsPlay = false;
+          }
         }
         final e = (m['e']! as JSFloat64Array).toDart;
         for (var i = 0; i + 3 <= e.length; i += 3) {
@@ -470,6 +554,7 @@ final class _WebEngine implements AudioEngine {
     if (rate < 8000 || rate > 48000 || rate % 100 != 0) {
       throw AudioEngineException(-1, 'startCapture: ${_errorText(-1)}');
     }
+    _capturing = true;
     final ctx = _ctx;
     if (ctx != null && _mic == null) await _openMic(ctx);
     _send(_msg('capture', {'rate': rate}));
@@ -517,6 +602,7 @@ final class _WebEngine implements AudioEngine {
   @override
   Future<void> stopCapture() async {
     _checkOpen();
+    _capturing = false;
     _send(_msg('capture', {'rate': 0}));
     _closeMic();
   }
@@ -638,6 +724,7 @@ final class _WebEngine implements AudioEngine {
     if (_closed) return;
     _closed = true;
     _latencyTimer?.cancel();
+    _idleTimer?.cancel();
     for (final (target, type, f) in _listeners) {
       target.removeEventListener(type, f);
     }
@@ -685,6 +772,9 @@ final class _WebTrack implements Track {
   int _written;
   bool _ended;
   bool _disposed = false;
+
+  /// play() was called and no state since shows the track stopped.
+  bool _wantsPlay = false;
 
   /// The last state the core posted: id, status, position, sampled_at,
   /// rate, written, duration, mixer position, underruns.
@@ -759,11 +849,15 @@ final class _WebTrack implements Track {
   @override
   void play() {
     _command(_kPlay);
+    _wantsPlay = true;
     unawaited(_engine._resume());
   }
 
   @override
-  void pause() => _command(_kPause);
+  void pause() {
+    _command(_kPause);
+    _wantsPlay = false;
+  }
 
   @override
   void seek(Duration position) =>
@@ -854,3 +948,72 @@ final class _WebTrack implements Track {
     _closeLocal();
   }
 }
+
+// ---- Test probes (lib/web_testing.dart) ----
+
+/// Output samples recorded after the engine, with the context frame of
+/// each piece. The frame clock is the engine clock: frame f is at
+/// f / sampleRate seconds.
+final class WebOutputTap {
+  WebOutputTap._(this.sampleRate, this._node);
+
+  final int sampleRate;
+  final web.AudioWorkletNode _node;
+  final List<(int, Float32List)> pieces = [];
+
+  void start() {
+    pieces.clear();
+    _node.port.postMessage(JSObject()..['on'] = true.toJS);
+  }
+
+  void stop() => _node.port.postMessage(JSObject()..['on'] = false.toJS);
+}
+
+Future<WebOutputTap> debugTapOutput(AudioEngine engine) async {
+  final e = engine as _WebEngine;
+  final ctx = e._ctx!;
+  final node = e._node!;
+  final tap = web.AudioWorkletNode(
+    ctx,
+    'telosnex-tap',
+    web.AudioWorkletNodeOptions(
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: <JSNumber>[2.toJS].toJS,
+    ),
+  );
+  final t = WebOutputTap._(ctx.sampleRate.round(), tap);
+  tap.port.onmessage = ((web.MessageEvent m) {
+    final d = m.data! as JSObject;
+    t.pieces.add((
+      (d['frame']! as JSNumber).toDartInt,
+      (d['pcm']! as JSFloat32Array).toDart,
+    ));
+  }).toJS;
+  node
+    ..disconnect()
+    ..connect(tap);
+  tap.connect(ctx.destination);
+  return t;
+}
+
+/// Fixes the device delay the worklet uses (normally baseLatency +
+/// outputLatency). With zero, the heard position is the position at the
+/// render clock, which a tap can check.
+void debugSetOutputDelay(AudioEngine engine, Duration delay) {
+  final e = engine as _WebEngine
+    .._latencyFixed = true
+    .._latencySeconds = delay.inMicroseconds / 1e6;
+  e._send(_msg('delay', {'ns': delay.inMicroseconds * 1000}));
+}
+
+/// The AudioContext state ('running', 'suspended', 'closed').
+String debugContextState(AudioEngine engine) =>
+    (engine as _WebEngine)._ctx?.state ?? 'manual';
+
+/// Resumes the AudioContext (call from a user gesture where needed).
+Future<void> debugResume(AudioEngine engine) =>
+    (engine as _WebEngine)._resume();
+
+void debugIdle(AudioEngine engine) =>
+    (engine as _WebEngine)._send(_msg('idle'));

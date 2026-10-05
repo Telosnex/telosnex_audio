@@ -372,6 +372,13 @@ EMSCRIPTEN_KEEPALIVE float* tsnxw_render(double mix_ns, double delay_ns,
   return g_core->out.data();
 }
 
+// The output stopped at `stop_ns` and will start again; the audio in the
+// device buffer is lost (ADR I10).
+EMSCRIPTEN_KEEPALIVE void tsnxw_output_restart(double stop_ns) {
+  for (tsnx::Track* t : g_core->tracks)
+    if (t) t->OnOutputRestart(static_cast<int64_t>(stop_ns));
+}
+
 // Applies commands and publishes state without rendering (no output).
 EMSCRIPTEN_KEEPALIVE void tsnxw_idle(double now_ns) {
   g_core->retirer.BeginBlock();
