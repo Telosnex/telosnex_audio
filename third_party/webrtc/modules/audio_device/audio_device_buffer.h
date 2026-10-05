@@ -117,6 +117,8 @@ class AudioDeviceBuffer {
       std::optional<int64_t> capture_timestamp_ns);
   virtual void SetVQEData(int play_delay_ms, int rec_delay_ms);
   virtual int32_t DeliverRecordedData();
+  void DeliverHardwareClockObservation(
+      const AudioHardwareClockObservation& observation);
   uint32_t NewMicLevel() const;
 
   virtual int32_t RequestPlayoutData(size_t samples_per_channel);
