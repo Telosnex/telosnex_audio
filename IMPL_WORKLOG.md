@@ -113,3 +113,20 @@ Status (2026-10-05):
   CI and release workflows now use macos-15 (arm64), ubuntu-24.04 (x64), ubuntu-24.04-arm, and
   windows-2025-vs2026. Checkout uses actions/checkout. actionlint passes. Removed the temporary
   repository access to the organization's self-hosted runner group. No WarpBuild app access is needed.
+- armeabi-v7a now builds with NDK 28.2 at API 24. CMake selects ARM32 NEON and portable C SPL,
+  without the ARMv7 assembly paths. The hook maps Architecture.arm to armeabi-v7a. The profile
+  example APK contains lib/armeabi-v7a/libtelosnex_audio.so. Native tests compile for ARM32,
+  including static lock-free checks for every atomic type used by the render path. They do not
+  run on the current emulator, which advertises only arm64-v8a. Mac native tests: 44 passed.
+- First GitHub-hosted CI: seven jobs passed. Web found a stale wasm input stamp from the prior
+  device-readback commit (rebuilt; binary unchanged; Chrome cases pass). Windows native tests
+  passed but the export regex matched the dumpbin characteristics header. The corrected regex
+  accepts the real DLL and rejects an injected unexpected symbol in the Windows VM.
+- Step 10 code is prepared in the app and Edge repositories. New billed WS endpoints cover
+  standard Realtime Live, Transcribe, and Translate. The app defaults remain WebRTC. Standard
+  Live also needs the step 6 Track-backed flush player before its factory can be enabled.
+  Targeted app tests: 13 passed. The affected run had 806 passes and 27 unrelated shared-worktree
+  failures. Edge local billing/lifecycle tests pass, with no provider or wallet calls.
+  Real provider/billing parity and a universal terminal billing record on transport drops remain
+  open. No endpoint deployment or transport-default change occurred. Latency/web echo checks
+  were skipped as requested.

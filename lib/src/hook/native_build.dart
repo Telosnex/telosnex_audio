@@ -24,12 +24,20 @@ const assetName = 'src/ffi.dart';
 /// Targets with an engine. Other targets get no asset; the Dart API then
 /// reports the engine as unavailable (ADR workplan step 6).
 bool isSupportedTarget(OS os, Architecture arch) =>
+    (os == OS.android && arch == Architecture.arm) ||
     (os == OS.macOS ||
-        os == OS.linux ||
-        os == OS.windows ||
-        os == OS.iOS ||
-        os == OS.android) &&
-    (arch == Architecture.arm64 || arch == Architecture.x64);
+            os == OS.linux ||
+            os == OS.windows ||
+            os == OS.iOS ||
+            os == OS.android) &&
+        (arch == Architecture.arm64 || arch == Architecture.x64);
+
+String androidAbi(Architecture arch) => switch (arch) {
+  Architecture.arm => 'armeabi-v7a',
+  Architecture.arm64 => 'arm64-v8a',
+  Architecture.x64 => 'x86_64',
+  _ => throw UnsupportedError('Unsupported Android architecture: $arch'),
+};
 
 Future<void> buildNative(BuildInput input, BuildOutputBuilder output) async {
   if (!input.config.buildCodeAssets) return;
@@ -222,7 +230,7 @@ Future<File> _buildFromSource(
     ],
     if (os == OS.android) ...[
       '-DCMAKE_TOOLCHAIN_FILE=${_androidNdk(code)}/build/cmake/android.toolchain.cmake',
-      '-DANDROID_ABI=${arch == Architecture.arm64 ? 'arm64-v8a' : 'x86_64'}',
+      '-DANDROID_ABI=${androidAbi(arch)}',
       '-DANDROID_PLATFORM=android-${code.android.targetNdkApi}',
       '-DANDROID_STL=c++_static',
     ],
@@ -234,8 +242,7 @@ Future<File> _buildFromSource(
       '-DCMAKE_C_COMPILER=cl',
       '-DCMAKE_CXX_COMPILER=cl',
     ],
-    if (os != OS.macOS && os != OS.iOS)
-      '-DTSNX_TARGET_ARCH=${arch == Architecture.arm64 ? 'arm64' : 'x64'}',
+    if (os != OS.macOS && os != OS.iOS) '-DTSNX_TARGET_ARCH=${arch.name}',
   ];
   final cache = File('${buildDir.path}/CMakeCache.txt');
   final stamp = File('${buildDir.path}/tsnx_configure_args.txt');

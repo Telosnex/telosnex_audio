@@ -132,7 +132,8 @@ jobs:
           cmake --build build\test || exit /b 1
           build\test\native_test\tsnx_tests.exe || exit /b 1
           dumpbin /exports build\test\telosnex_audio.dll > exports.txt
-          findstr /R /C:"^ *[0-9][0-9]* *[0-9A-F][0-9A-F]* [0-9A-F]" exports.txt | findstr /V /C:" tsnx_" && exit /b 1
+          findstr /C:" tsnx_engine_open" exports.txt >nul || exit /b 1
+          findstr /R /C:"^ *[1-9][0-9]*  *[0-9A-F][0-9A-F]*  *[0-9A-F][0-9A-F]*  *[^ ]" exports.txt | findstr /V /C:" tsnx_" && exit /b 1
           call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" x64_arm64 || exit /b 1
           cmake -S . -B build\arm64 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DTSNX_TARGET_ARCH=arm64 || exit /b 1
           cmake --build build\arm64 --target telosnex_audio || exit /b 1
@@ -174,7 +175,7 @@ jobs:
           dart analyze --fatal-infos
 
       - name: Dart API tests (builds the native asset)
-        run: flutter test test/engine_test.dart test/licenses_test.dart
+        run: flutter test test/engine_test.dart test/licenses_test.dart test/hook_build_test.dart
 
       - name: Example app builds through the hook
         run: |
@@ -229,7 +230,7 @@ jobs:
           ${{ matrix.check }}
 
   example-android:
-    name: Example build / Android arm64, x86_64
+    name: Example build / Android armeabi-v7a, arm64, x86_64
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -258,8 +259,9 @@ jobs:
           set -euo pipefail
           cd example
           flutter pub get
-          flutter build apk --debug --target-platform android-arm64,android-x64
+          flutter build apk --debug --target-platform android-arm,android-arm64,android-x64
           unzip -l build/app/outputs/flutter-apk/app-debug.apk | tee /tmp/apk.txt
+          grep -q 'lib/armeabi-v7a/libtelosnex_audio.so' /tmp/apk.txt
           grep -q 'lib/arm64-v8a/libtelosnex_audio.so' /tmp/apk.txt
           grep -q 'lib/x86_64/libtelosnex_audio.so' /tmp/apk.txt
 
