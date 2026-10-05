@@ -89,6 +89,10 @@ class Track {
   void SetRate(double rate);
   void SetGain(double gain, int64_t ramp_frames);
   void Flush(int64_t target_written);
+  // The output device stopped at `stop_ns` and started again; audio rendered
+  // after that was never heard. Moves a playing track back to the position
+  // heard at `stop_ns` (ADR I10).
+  void OnOutputRestart(int64_t stop_ns);
 
   // ---- Render, audio thread ----
   // Fills `out` (kOutFrames * channels() samples, 48 kHz interleaved).

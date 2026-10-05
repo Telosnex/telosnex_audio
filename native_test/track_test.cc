@@ -363,3 +363,41 @@ TEST(Mp3TrackPlaysToEnd) {
   CHECK_EQ(h.State(id).status, 4);
   CHECK_EQ(h.Count(TSNX_NOTIFY_ENDED, id), 1);
 }
+
+// I10: after an output restart, playback continues from the heard position.
+// The device buffer (40 ms here) is lost, so the engine moves the track back
+// by that much: no audio is skipped, and none plays twice.
+TEST(OutputRestartResumesFromHeardPosition) {
+  for (int retention : {kAll, kUnplayed}) {
+    Harness h(/*delay_ms=*/40);
+    const int rate = 48000;
+    // Source sample i holds i % 30000, so an output sample names its frame.
+    std::vector<int16_t> src(static_cast<size_t>(rate * 3));
+    for (size_t i = 0; i < src.size(); ++i)
+      src[i] = static_cast<int16_t>(i % 30000);
+    const int32_t id = h.NewTrack(rate, 1, retention);
+    WriteAll(h, id, src, 1);
+    tsnx_track_end_of_stream(h.e, id);
+    tsnx_track_play(h.e, id);
+    // 104 blocks: the restart falls 0.04 s past the 1 s chunk boundary, so
+    // .unplayed has already moved its playhead into the next chunk.
+    std::vector<int16_t> before;
+    h.Render(104, &before);
+    // 1.04 s rendered, 40 ms still in the device: 1.00 s heard when the
+    // output stops. (The published state is from the last block's start.)
+    const int64_t heard_at_stop = 48000;
+    CHECK_MSG(std::abs(h.State(id).position - (heard_at_stop - 480)) <= 48,
+              "state %lld", static_cast<long long>(h.State(id).position));
+
+    CHECK_EQ(tsnx_engine_manual_output_restart(h.e, 300), 0);
+    std::vector<int16_t> after;
+    h.Render(3, &after);
+    // Past the 5 ms fade-in, output sample k is source frame heard_at_stop+k.
+    const int k = 480;
+    const int64_t frame = after[k];
+    const int64_t want = (heard_at_stop + k) % 30000;
+    CHECK_MSG(std::abs(frame - want) <= 48, "resumed at %lld, want %lld",
+              static_cast<long long>(frame), static_cast<long long>(want));
+    CHECK(h.State(id).status == 1);
+  }
+}

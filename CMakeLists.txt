@@ -94,7 +94,15 @@ if(APPLE)
   list(APPEND TSNX_WEBRTC_SOURCES ${TSNX_WEBRTC_SOURCES_APPLE})
   if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     list(APPEND TSNX_DEFINES WEBRTC_IOS)
-    message(FATAL_ERROR "iOS is workplan step 8")
+    list(APPEND TSNX_WEBRTC_SOURCES ${TSNX_WEBRTC_SOURCES_IOS})
+    # iOS uses AudioEngineDevice directly. The generic module would pull in
+    # AudioDeviceIOS, which is not vendored.
+    list(REMOVE_ITEM TSNX_WEBRTC_SOURCES
+      ${TSNX_WEBRTC_DIR}/modules/audio_device/audio_device_impl.cc
+      ${TSNX_WEBRTC_DIR}/api/audio/create_audio_device_module.cc)
+    foreach(fw AVFoundation AudioToolbox CoreAudio CoreFoundation Foundation UIKit)
+      list(APPEND TSNX_LINK_LIBS "-framework ${fw}")
+    endforeach()
   else()
     list(APPEND TSNX_WEBRTC_SOURCES ${TSNX_WEBRTC_SOURCES_MACOS})
     foreach(fw CoreAudio AudioToolbox CoreFoundation Foundation AVFoundation CoreGraphics CoreServices)
@@ -104,9 +112,8 @@ if(APPLE)
   # The vendored Objective-C must not register classes that collide with
   # another WebRTC copy in the process (ADR D5).
   list(APPEND TSNX_DEFINES RTC_OBJC_TYPE_PREFIX=TSNX)
-  set_source_files_properties(
-    ${TSNX_WEBRTC_DIR}/rtc_base/system/gcd_helpers.m
-    PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+  # WebRTC's Objective-C (like Chromium's) is written for ARC.
+  set(TSNX_OBJC_ARC $<$<COMPILE_LANGUAGE:OBJC,OBJCXX>:-fobjc-arc>)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   # ALSA and PulseAudio load at run time (dlopen); the build needs only their
   # headers.
@@ -144,6 +151,7 @@ endif()
 
 set(TSNX_INCLUDES
   ${TSNX_WEBRTC_DIR}
+  ${TSNX_WEBRTC_DIR}/sdk/objc
   ${TSNX_WEBRTC_DIR}/third_party/abseil-cpp
   ${TSNX_WEBRTC_DIR}/gen
 )
@@ -167,7 +175,7 @@ add_library(tsnx_webrtc STATIC ${TSNX_WEBRTC_SOURCES})
 target_include_directories(tsnx_webrtc SYSTEM PUBLIC ${TSNX_INCLUDES})
 target_compile_definitions(tsnx_webrtc PUBLIC ${TSNX_DEFINES})
 target_compile_options(tsnx_webrtc PRIVATE ${TSNX_WARN_OFF}
-  ${TSNX_NO_EXCEPTIONS} ${TSNX_WEBRTC_FLAGS})
+  ${TSNX_NO_EXCEPTIONS} ${TSNX_WEBRTC_FLAGS} ${TSNX_OBJC_ARC})
 target_compile_options(tsnx_webrtc PUBLIC ${TSNX_COMMON_FLAGS})
 target_link_libraries(tsnx_webrtc PUBLIC ${TSNX_LINK_LIBS})
 

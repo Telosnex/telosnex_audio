@@ -3,7 +3,7 @@
     "url": "https://github.com/webrtc-sdk/webrtc.git",
     "commit": "b1800a61db8320af5c14456c13622d8b85b1ed39",
     "third_party_commit": "a3b630c291f1cf3b711687b1c4be322d3015512e",
-    "files": 1150
+    "files": 1165
   },
   "sonic": {
     "url": "https://github.com/waywardgeek/sonic.git",

@@ -38,14 +38,20 @@ TEST(StoreUnplayedRefusesWritesPastAheadLimit) {
   std::vector<int16_t> one_s(8000, 1);
   for (int i = 0; i < 3; ++i) CHECK_EQ(s.Write(one_s.data(), 8000, 0, r), 8000);
   CHECK_EQ(s.Write(one_s.data(), 1, 0, r), tsnx::kStoreFull);
-  // Playing 1.5 s frees chunk 0 and makes room.
+  // At 1.5 s, chunk 0 stays: one chunk behind the playhead is kept for an
+  // output restart (ADR I10).
   s.Maintain(12000, r);
   r.Reclaim();
+  CHECK_EQ(s.ResidentChunks(), 3);
+  // Playing 2.5 s frees chunk 0 and makes room.
+  s.Maintain(20000, r);
+  r.Reclaim();
   CHECK_EQ(s.ResidentChunks(), 2);
-  CHECK_EQ(s.Write(one_s.data(), 8000, 12000, r), 8000);
+  CHECK_EQ(s.Write(one_s.data(), 8000, 20000, r), 8000);
   std::vector<int16_t> out(100);
-  CHECK_EQ(s.Read(0, out.data(), 100), 0);       // freed
-  CHECK_EQ(s.Read(12000, out.data(), 100), 100);  // resident
+  CHECK_EQ(s.Read(0, out.data(), 100), 0);        // freed
+  CHECK_EQ(s.Read(9000, out.data(), 100), 100);   // kept behind
+  CHECK_EQ(s.Read(20000, out.data(), 100), 100);  // resident
 }
 
 TEST(StoreAllSpillsAndReloadsExactly) {

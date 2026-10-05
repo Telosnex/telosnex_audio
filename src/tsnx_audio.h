@@ -92,6 +92,10 @@ TSNX_EXPORT int64_t tsnx_engine_now_ns(tsnx_engine* e);  // leaf
 TSNX_EXPORT int32_t tsnx_engine_manual_render(tsnx_engine* e, int32_t blocks,
                                               int16_t* out,
                                               const int16_t* capture_in);
+// Manual device: the output stops, stays silent for `gap_ms`, and starts
+// again with an empty device buffer (tests of ADR I10).
+TSNX_EXPORT int32_t tsnx_engine_manual_output_restart(tsnx_engine* e,
+                                                      int32_t gap_ms);
 TSNX_EXPORT double tsnx_engine_erle_db(tsnx_engine* e);
 TSNX_EXPORT int64_t tsnx_engine_render_format_changes(tsnx_engine* e);
 // Diagnostics: capture energy (sum of squares, 48 kHz mono) before and after

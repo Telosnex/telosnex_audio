@@ -19,7 +19,9 @@
 #include "api/audio/audio_mixer.h"
 #include "api/audio/audio_processing.h"
 #include "api/audio/builtin_audio_processing_builder.h"
+#if !defined(WEBRTC_IOS)
 #include "api/audio/create_audio_device_module.h"
+#endif
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
 #include "block_resampler.h"
@@ -28,6 +30,9 @@
 #include "modules/audio_mixer/audio_mixer_impl.h"
 #if defined(__APPLE__)
 #include "apple/apple_devices.h"
+#endif
+#if defined(WEBRTC_IOS)
+#include "apple/ios_session.h"
 #endif
 #include "modules/audio_mixer/output_rate_calculator.h"
 #include "rtc_base/thread.h"
@@ -163,6 +168,24 @@ std::unique_ptr<Engine> Engine::Open(const EngineConfig& config,
 
 Engine::Engine(const EngineConfig& config) : config_(config) {
   for (auto& s : slots_) s.store(nullptr);
+#if defined(WEBRTC_IOS)
+  // iOS runs Apple voice processing in the device; the APM echo canceller
+  // stays off (as on macOS with platform_voice_processing).
+  if (!config_.manual_device) config_.platform_voice_processing = true;
+#endif
+}
+
+void Engine::ApplySessionProfile(bool capture) {
+#if defined(WEBRTC_IOS)
+  const auto want = capture ? SessionProfile::kCommunication
+                            : SessionProfile::kMedia;
+  if (session_profile_ == static_cast<int>(want)) return;
+  // A category change restarts the output (D6): the device buffer is lost.
+  if (rtc_->adm->Playing()) MarkOutputRestart();
+  if (SetSessionProfile(want)) session_profile_ = static_cast<int>(want);
+#else
+  (void)capture;
+#endif
 }
 
 bool Engine::Init(int32_t* error) {
@@ -231,8 +254,13 @@ bool Engine::Init(int32_t* error) {
     else if (config_.linux_audio_backend == 2)
       layer = webrtc::AudioDeviceModule::kLinuxAlsaAudio;
 #endif
+#if defined(WEBRTC_IOS)
+    // iOS: AVAudioEngine with Apple voice processing (the fork's device).
+    rtc_->adm = CreateAppleVoiceProcessingAdm(rtc_->env);
+#else
     if (!rtc_->adm)
       rtc_->adm = webrtc::CreateAudioDeviceModule(rtc_->env, layer);
+#endif
     if (!rtc_->adm || rtc_->adm->Init() != 0) return;
     rtc_->adm->RegisterAudioCallback(rtc_->transport.get());
     RefreshDevices();
@@ -491,6 +519,20 @@ void Engine::RenderBlock(int16_t* out, size_t frames, size_t channels,
     render_channels_ = ch;
     ++render_format_changes_;
   }
+  // I10: an output restart loses the audio in the device buffer.
+  int64_t stop_ns = restart_stop_ns_.exchange(0, std::memory_order_acq_rel);
+  if (prev_render_ns_ != 0) {
+    const int64_t prev_end = prev_render_ns_ + 10'000'000;
+    if (stop_ns != 0) stop_ns = std::min(stop_ns, prev_end);
+    else if (now - prev_render_ns_ > kRestartGapNs) stop_ns = prev_end;
+    if (stop_ns != 0) {
+      for (auto& s : slots_) {
+        Track* t = s.load(std::memory_order_acquire);
+        if (t) t->OnOutputRestart(stop_ns);
+      }
+    }
+  }
+  prev_render_ns_ = now;
   render_now_ns_ = now;
   render_delay_ns_ = device_delay_ns_.load(std::memory_order_relaxed);
   webrtc::AudioFrame& mix = rtc_->mix_frame;
@@ -526,6 +568,18 @@ void Engine::RenderBlock(int16_t* out, size_t frames, size_t channels,
   retirer_.EndBlock();
   render_lock_.store(false, std::memory_order_release);
   if (rt_events_.Size() > 0) notify_wakeup_.Signal();
+}
+
+void Engine::MarkOutputRestart() {
+  int64_t expected = 0;
+  restart_stop_ns_.compare_exchange_strong(expected, NowNs());
+}
+
+int32_t Engine::ManualOutputRestart(int32_t gap_ms) {
+  if (!config_.manual_device || gap_ms < 0) return kErrInvalidArgument;
+  MarkOutputRestart();
+  manual_now_ns_ += int64_t{gap_ms} * 1000000;
+  return kOk;
 }
 
 // Runs the APM and mixer once on this (non-real-time) thread, so their
@@ -685,6 +739,7 @@ int32_t Engine::StartCapture(int32_t rate, int32_t request_id) {
     int32_t result = kOk;
     auto& adm = rtc_->adm;
     if (!adm->Recording()) {
+      ApplySessionProfile(/*capture=*/true);
       if (adm->SetRecordingDevice(selected_input_) != 0 ||
           adm->InitRecording() != 0 || adm->StartRecording() != 0)
         result = kErrDevice;
@@ -715,6 +770,14 @@ void Engine::RefreshDevices() {
   std::vector<DeviceInfo> outs, ins;
   char name[webrtc::kAdmMaxDeviceNameSize];
   char guid[webrtc::kAdmMaxGuidSize];
+#if defined(WEBRTC_IOS)
+  // iOS routes come from the audio session, not the device module.
+  (void)adm;
+  (void)name;
+  (void)guid;
+  for (auto& [id, n] : SessionOutputs()) outs.push_back({id, n});
+  for (auto& [id, n] : SessionInputs()) ins.push_back({id, n});
+#else
   for (int i = 0; i < adm->PlayoutDevices(); ++i) {
     if (adm->PlayoutDeviceName(i, name, guid) == 0)
       outs.push_back({guid[0] ? guid : std::to_string(i), name});
@@ -723,6 +786,7 @@ void Engine::RefreshDevices() {
     if (adm->RecordingDeviceName(i, name, guid) == 0)
       ins.push_back({guid[0] ? guid : std::to_string(i), name});
   }
+#endif
   bool changed = false;
   {
     std::lock_guard<std::mutex> lock(devices_mu_);
@@ -753,6 +817,12 @@ int32_t Engine::SelectOutput(const std::string& id, int32_t request_id) {
     return kOk;
   }
   device_thread_->Post([this, id, request_id] {
+#if defined(WEBRTC_IOS)
+    Notify(static_cast<int32_t>(NotifyKind::kRequestDone), request_id,
+           SessionSelectOutput(id) ? kOk : kErrInvalidArgument);
+    RefreshDevices();
+    return;
+#endif
     int index = -1;
     {
       std::lock_guard<std::mutex> lock(devices_mu_);
@@ -765,7 +835,10 @@ int32_t Engine::SelectOutput(const std::string& id, int32_t request_id) {
     } else {
       auto& adm = rtc_->adm;
       const bool was_playing = adm->Playing();
-      if (was_playing) adm->StopPlayout();
+      if (was_playing) {
+        MarkOutputRestart();
+        adm->StopPlayout();
+      }
       selected_output_ = index;
       if (adm->SetPlayoutDevice(index) != 0) result = kErrDevice;
       if (was_playing &&
@@ -786,6 +859,11 @@ int32_t Engine::SelectInput(const std::string& id, int32_t request_id) {
     return kOk;
   }
   device_thread_->Post([this, id, request_id] {
+#if defined(WEBRTC_IOS)
+    Notify(static_cast<int32_t>(NotifyKind::kRequestDone), request_id,
+           SessionSelectInput(id) ? kOk : kErrInvalidArgument);
+    return;
+#endif
     int index = -1;
     {
       std::lock_guard<std::mutex> lock(devices_mu_);
@@ -845,6 +923,7 @@ void Engine::UpdatePlayoutDemand() {
   if (demand && !running && !playout_pending_.exchange(true)) {
     device_thread_->Post([this] {
       auto& adm = rtc_->adm;
+      ApplySessionProfile(capture_active_.load());
       int32_t ok = adm->SetPlayoutDevice(selected_output_) == 0 &&
                    adm->InitPlayout() == 0 && adm->StartPlayout() == 0;
       playout_running_.store(ok);
@@ -861,6 +940,14 @@ void Engine::UpdatePlayoutDemand() {
       idle_since_ns_ = 0;
       device_thread_->Post([this] {
         if (rtc_->adm->Playing()) rtc_->adm->StopPlayout();
+#if defined(WEBRTC_IOS)
+        // Back to the media profile (D6) at the next start; let other apps'
+        // audio resume now.
+        if (!rtc_->adm->Recording()) {
+          DeactivateSession();
+          session_profile_ = 0;
+        }
+#endif
         playout_running_.store(false);
         playout_pending_.store(false);
         Notify(static_cast<int32_t>(NotifyKind::kOutputState), 0, 0);
@@ -870,9 +957,14 @@ void Engine::UpdatePlayoutDemand() {
   if (running && now - last_delay_poll_ns_ > 250'000'000) {
     last_delay_poll_ns_ = now;
     device_thread_->Post([this] {
+#if defined(WEBRTC_IOS)
+      // AudioEngineDevice reports 0 ms (ADR risk 5).
+      device_delay_ns_.store(SessionOutputDelayNs());
+#else
       uint16_t ms = 0;
       if (rtc_->adm->PlayoutDelay(&ms) == 0)
         device_delay_ns_.store(int64_t{ms} * 1000000);
+#endif
     });
   }
   if (now - last_device_poll_ns_ > 2'000'000'000) {

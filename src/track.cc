@@ -195,6 +195,22 @@ void Track::Flush(int64_t target_written) {
   flush_now_ = true;  // applied at the next Render, which can push events
 }
 
+void Track::OnOutputRestart(int64_t stop_ns) {
+  if (!want_play_ || status_ == TrackStatus::kFailed ||
+      status_ == TrackStatus::kEnded || heard_count_ == 0)
+    return;
+  const int64_t heard = HeardPosition(stop_ns);
+  if (heard >= MonotonicE2() && !end_rendered_) return;  // nothing lost
+  ResetPipeline();
+  fed_ = heard;
+  last_e2_ = heard;
+  heard_count_ = 0;
+  playhead_.store(fed_, std::memory_order_release);
+  if (started_pending_) started_at_ns_ = 0;  // the start was never heard
+  fade_in_pending_ = true;
+  fade_ = 0.0;
+}
+
 // ---- Render ----
 
 void Track::PushHeard(int64_t t_heard_ns, int64_t pos_start, int64_t pos_end) {

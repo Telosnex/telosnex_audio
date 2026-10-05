@@ -24,7 +24,7 @@ const assetName = 'src/ffi.dart';
 /// Targets with an engine. Other targets get no asset; the Dart API then
 /// reports the engine as unavailable (ADR workplan step 6).
 bool isSupportedTarget(OS os, Architecture arch) =>
-    (os == OS.macOS || os == OS.linux || os == OS.windows) &&
+    (os == OS.macOS || os == OS.linux || os == OS.windows || os == OS.iOS) &&
     (arch == Architecture.arm64 || arch == Architecture.x64);
 
 Future<void> buildNative(BuildInput input, BuildOutputBuilder output) async {
@@ -40,7 +40,9 @@ Future<void> buildNative(BuildInput input, BuildOutputBuilder output) async {
   final mode = (input.userDefines['native'] as String?) ?? 'auto';
   final buildType = (input.userDefines['build_type'] as String?) ?? 'Release';
   final libName = os.dylibFileName('telosnex_audio');
-  final target = '${os.name}-${arch.name}';
+  final simulator =
+      os == OS.iOS && code.iOS.targetSdk == IOSSdk.iPhoneSimulator;
+  final target = '${simulator ? 'iossim' : os.name}-${arch.name}';
 
   // A desktop target on another host OS (flutterpi_tool builds Linux arm64
   // on macOS) has no compiler and sysroot here: use the prebuilt.
@@ -61,7 +63,15 @@ Future<void> buildNative(BuildInput input, BuildOutputBuilder output) async {
       );
     }
   }
-  lib ??= await _buildFromSource(input, root, os, arch, buildType, libName);
+  lib ??= await _buildFromSource(
+    input,
+    root,
+    os,
+    arch,
+    buildType,
+    libName,
+    target,
+  );
 
   final out = File.fromUri(input.outputDirectory.resolve(libName));
   await lib.copy(out.path);
@@ -170,6 +180,7 @@ Future<File> _buildFromSource(
   Architecture arch,
   String buildType,
   String libName,
+  String target,
 ) async {
   final code = input.config.code;
   // Windows: CMake, Ninja, and cl.exe come from the Visual Studio developer
@@ -186,9 +197,7 @@ Future<File> _buildFromSource(
   final ninja = _findTool('ninja', env);
   final linuxCompilers = os == OS.linux ? _linuxCompilers(code) : null;
   final buildDir = Directory.fromUri(
-    input.outputDirectoryShared.resolve(
-      'cmake-${os.name}-${arch.name}-$buildType/',
-    ),
+    input.outputDirectoryShared.resolve('cmake-$target-$buildType/'),
   );
   final configureArgs = <String>[
     '-S',
@@ -201,6 +210,12 @@ Future<File> _buildFromSource(
       '-DCMAKE_OSX_ARCHITECTURES=${arch == Architecture.arm64 ? 'arm64' : 'x86_64'}',
       '-DCMAKE_OSX_DEPLOYMENT_TARGET=${code.macOS.targetVersion}',
     ],
+    if (os == OS.iOS) ...[
+      '-DCMAKE_SYSTEM_NAME=iOS',
+      '-DCMAKE_OSX_SYSROOT=${target.startsWith('iossim') ? 'iphonesimulator' : 'iphoneos'}',
+      '-DCMAKE_OSX_ARCHITECTURES=${arch == Architecture.arm64 ? 'arm64' : 'x86_64'}',
+      '-DCMAKE_OSX_DEPLOYMENT_TARGET=${code.iOS.targetVersion}',
+    ],
     if (linuxCompilers != null) ...[
       '-DCMAKE_C_COMPILER=${linuxCompilers.$1}',
       '-DCMAKE_CXX_COMPILER=${linuxCompilers.$2}',
@@ -209,7 +224,7 @@ Future<File> _buildFromSource(
       '-DCMAKE_C_COMPILER=cl',
       '-DCMAKE_CXX_COMPILER=cl',
     ],
-    if (os != OS.macOS)
+    if (os != OS.macOS && os != OS.iOS)
       '-DTSNX_TARGET_ARCH=${arch == Architecture.arm64 ? 'arm64' : 'x64'}',
   ];
   final cache = File('${buildDir.path}/CMakeCache.txt');

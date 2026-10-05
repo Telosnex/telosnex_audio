@@ -70,6 +70,11 @@ TSNX_EXPORT int32_t tsnx_engine_manual_render(tsnx_engine* e, int32_t blocks,
   return E(e)->ManualRender(blocks, out, capture_in);
 }
 
+TSNX_EXPORT int32_t tsnx_engine_manual_output_restart(tsnx_engine* e,
+                                                      int32_t gap_ms) {
+  return E(e) ? E(e)->ManualOutputRestart(gap_ms) : TSNX_ERR_INVALID_ARGUMENT;
+}
+
 TSNX_EXPORT double tsnx_engine_erle_db(tsnx_engine* e) {
   return E(e) ? E(e)->EchoReturnLossEnhancement() : 0;
 }

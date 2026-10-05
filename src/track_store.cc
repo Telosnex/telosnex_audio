@@ -257,9 +257,11 @@ bool TrackStore::Maintain(int64_t playhead, Retirer& retirer) {
   bool changed = false;
 
   if (retention_ == Retention::kUnplayed) {
+    // One chunk behind the playhead stays: an output restart moves the
+    // track back by the audio that was in the device buffer (ADR I10).
     for (size_t s = 0; s < num_slots_; ++s) {
       Chunk* c = slots_[s].load(std::memory_order_relaxed);
-      if (c && c->index < pk) {
+      if (c && c->index < pk - 1) {
         RetireSlot(c->index, &retirer);
         changed = true;
       }

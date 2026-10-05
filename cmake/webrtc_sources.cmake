@@ -459,9 +459,9 @@ set(TSNX_WEBRTC_SOURCES_APPLE
   ${TSNX_WEBRTC_DIR}/rtc_base/system/cocoa_threading.mm
   ${TSNX_WEBRTC_DIR}/rtc_base/system/gcd_helpers.m
   ${TSNX_WEBRTC_DIR}/rtc_base/task_queue_gcd.cc
+  ${TSNX_WEBRTC_DIR}/modules/audio_device/audio_engine_device.mm
 )
 set(TSNX_WEBRTC_SOURCES_MACOS
-  ${TSNX_WEBRTC_DIR}/modules/audio_device/audio_engine_device.mm
   ${TSNX_WEBRTC_DIR}/modules/audio_device/mac/audio_device_mac.cc
   ${TSNX_WEBRTC_DIR}/modules/audio_device/mac/audio_device_utils_mac.cc
   ${TSNX_WEBRTC_DIR}/modules/audio_device/mac/audio_mixer_manager_mac.cc
@@ -484,4 +484,13 @@ set(TSNX_WEBRTC_SOURCES_WINDOWS
   ${TSNX_WEBRTC_DIR}/rtc_base/win/scoped_com_initializer.cc
   ${TSNX_WEBRTC_DIR}/rtc_base/win/windows_version.cc
   ${TSNX_WEBRTC_DIR}/modules/audio_device/win/audio_device_core_win.cc
+)
+set(TSNX_WEBRTC_SOURCES_IOS
+  ${TSNX_WEBRTC_DIR}/sdk/objc/components/audio/RTCAudioSession.mm
+  ${TSNX_WEBRTC_DIR}/sdk/objc/components/audio/RTCAudioSession+Configuration.mm
+  ${TSNX_WEBRTC_DIR}/sdk/objc/components/audio/RTCAudioSessionConfiguration.m
+  ${TSNX_WEBRTC_DIR}/sdk/objc/components/audio/RTCNativeAudioSessionDelegateAdapter.mm
+  ${TSNX_WEBRTC_DIR}/sdk/objc/base/RTCLogging.mm
+  ${TSNX_WEBRTC_DIR}/sdk/objc/helpers/RTCDispatcher.m
+  ${TSNX_WEBRTC_DIR}/sdk/objc/helpers/UIDevice+RTCDevice.mm
 )

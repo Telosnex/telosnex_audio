@@ -155,6 +155,11 @@ class Engine : public EventSink {
   // ---- Device callbacks (audio threads) ----
   void RenderBlock(int16_t* out, size_t frames, size_t channels,
                    uint32_t rate);
+  // The output stops now and restarts later; the device drops its buffer.
+  // Any thread. The next render moves playing tracks back (ADR I10).
+  void MarkOutputRestart();
+  // Manual device: simulate an output restart with a `gap_ms` silence.
+  int32_t ManualOutputRestart(int32_t gap_ms);
   void CaptureBlockIn(const int16_t* in, size_t frames, size_t channels,
                       uint32_t rate, uint32_t total_delay_ms);
   // Clock-correction state for diagnostics.
@@ -223,6 +228,11 @@ class Engine : public EventSink {
   std::atomic<int64_t> device_delay_ns_{0};
   std::atomic<int64_t> last_render_ns_{0};
   int64_t manual_now_ns_ = 0;
+  int64_t prev_render_ns_ = 0;  // audio thread
+  std::atomic<int64_t> restart_stop_ns_{0};
+  // A render gap longer than this is an output restart the engine did not
+  // start (a route change inside the device module).
+  static constexpr int64_t kRestartGapNs = 250'000'000;
 
   void ProcessCapture(const int16_t* in, size_t frames, size_t channels,
                       uint32_t rate, uint32_t total_delay_ms);
@@ -272,6 +282,10 @@ class Engine : public EventSink {
   int64_t last_device_poll_ns_ = 0;
   int selected_output_ = 0;  // device thread
   int selected_input_ = 0;   // device thread
+  int session_profile_ = 0;  // device thread; iOS SessionProfile (D6)
+  // iOS: moves the shared audio session to the profile for the current
+  // capture state before the device starts. Device thread.
+  void ApplySessionProfile(bool capture);
 };
 
 }  // namespace tsnx

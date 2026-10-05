@@ -7,6 +7,10 @@
 // working tree, so local patches in the checkout do not leak in. Headers are
 // found by following `#include "..."` lines from the listed sources.
 //
+// Local changes to vendored WebRTC files are normal commits (for example
+// the ALSA patches from the fork). A run of this tool reverts them in the
+// working tree; restore them before you commit.
+//
 // Outputs (all regenerated; do not edit by hand):
 //   third_party/webrtc/**          sources, headers, licenses
 //   third_party/sonic/**, third_party/minimp3/**
@@ -198,6 +202,12 @@ Future<void> main(List<String> args) async {
 
   stdout.writeln(
     'webrtc: ${files.length} files, ${unresolved.length} unresolved includes (system or excluded).',
+  );
+  stdout.writeln(
+    'This run replaced third_party/webrtc with upstream files. Local WebRTC '
+    'commits (ALSA, MSVC fixes) are now reverted in the working tree; restore '
+    'them with `git checkout HEAD -- <files>` or cherry-pick them. List: '
+    '`git log --oneline -- third_party/webrtc`.',
   );
   final suspicious =
       unresolved

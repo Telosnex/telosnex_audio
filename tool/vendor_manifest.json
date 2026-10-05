@@ -7,7 +7,8 @@
     "third_party_commit": "a3b630c291f1cf3b711687b1c4be322d3015512e",
     "include_roots": [
       "",
-      "third_party/abseil-cpp"
+      "third_party/abseil-cpp",
+      "sdk/objc"
     ],
     "exclude_prefixes": [
       "third_party/perfetto/",
@@ -484,10 +485,10 @@
         "api/task_queue/default_task_queue_factory_gcd.cc",
         "rtc_base/system/cocoa_threading.mm",
         "rtc_base/system/gcd_helpers.m",
-        "rtc_base/task_queue_gcd.cc"
+        "rtc_base/task_queue_gcd.cc",
+        "modules/audio_device/audio_engine_device.mm"
       ],
       "macos": [
-        "modules/audio_device/audio_engine_device.mm",
         "modules/audio_device/mac/audio_device_mac.cc",
         "modules/audio_device/mac/audio_device_utils_mac.cc",
         "modules/audio_device/mac/audio_mixer_manager_mac.cc"
@@ -510,6 +511,15 @@
         "rtc_base/win/scoped_com_initializer.cc",
         "rtc_base/win/windows_version.cc",
         "modules/audio_device/win/audio_device_core_win.cc"
+      ],
+      "ios": [
+        "sdk/objc/components/audio/RTCAudioSession.mm",
+        "sdk/objc/components/audio/RTCAudioSession+Configuration.mm",
+        "sdk/objc/components/audio/RTCAudioSessionConfiguration.m",
+        "sdk/objc/components/audio/RTCNativeAudioSessionDelegateAdapter.mm",
+        "sdk/objc/base/RTCLogging.mm",
+        "sdk/objc/helpers/RTCDispatcher.m",
+        "sdk/objc/helpers/UIDevice+RTCDevice.mm"
       ]
     }
   },

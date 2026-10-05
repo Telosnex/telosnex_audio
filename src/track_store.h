@@ -5,8 +5,8 @@
 // thread reads resident chunks without locks. The writer (the Dart thread)
 // and the control thread change the store under a mutex.
 //
-// Retention `.unplayed` frees chunks behind the playhead and refuses writes
-// more than 30 s ahead. Retention `.all` keeps a backing store so seek works
+// Retention `.unplayed` frees chunks more than one chunk behind the playhead
+// and refuses writes more than 30 s ahead. Retention `.all` keeps a backing store so seek works
 // on the whole track: a spill file for streamed PCM, or the MP3 bytes.
 #ifndef TSNX_TRACK_STORE_H_
 #define TSNX_TRACK_STORE_H_
