@@ -6,7 +6,9 @@
 #include <cstring>
 #include <filesystem>
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#include <windows.h>
+#else
 #include <signal.h>
 #include <unistd.h>
 #endif
@@ -22,6 +24,7 @@
 #include "api/environment/environment_factory.h"
 #include "block_resampler.h"
 #include "clock/audio_clock_correction.h"
+#include "util/utf8_path.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
 #if defined(__APPLE__)
 #include "apple/apple_devices.h"
@@ -101,6 +104,15 @@ class EngineTransport : public webrtc::AudioTransport {
   }
   void PullRenderData(int, int, size_t, size_t, void*, int64_t*,
                       int64_t*) override {}
+  void OnAudioHardwareClockObservation(
+      const webrtc::AudioHardwareClockObservation& o) override {
+    e_->OnHardwareClock(
+        {o.direction == webrtc::AudioHardwareClockDirection::kPlayout
+             ? AudioHardwareClockDirection::kPlayout
+             : AudioHardwareClockDirection::kCapture,
+         o.monotonic_time_ns, o.position_frames, o.sample_rate_hz,
+         o.generation});
+  }
 
  private:
   Engine* e_;
@@ -157,7 +169,7 @@ bool Engine::Init(int32_t* error) {
   *error = kOk;
   if (!config_.spill_dir.empty()) {
     std::error_code ec;
-    std::filesystem::create_directories(config_.spill_dir, ec);
+    std::filesystem::create_directories(Utf8Path(config_.spill_dir), ec);
     CleanStaleSpill();
 #if defined(_WIN32)
     const long pid = static_cast<long>(GetCurrentProcessId());
@@ -165,7 +177,7 @@ bool Engine::Init(int32_t* error) {
     const long pid = static_cast<long>(getpid());
 #endif
     spill_dir_ = config_.spill_dir + "/" + std::to_string(pid);
-    std::filesystem::create_directories(spill_dir_, ec);
+    std::filesystem::create_directories(Utf8Path(spill_dir_), ec);
   }
 
   rtc_ = std::make_unique<EngineWebRtc>();
@@ -212,9 +224,15 @@ bool Engine::Init(int32_t* error) {
     if (config_.platform_voice_processing)
       rtc_->adm = CreateAppleVoiceProcessingAdm(rtc_->env);
 #endif
+    auto layer = webrtc::AudioDeviceModule::kPlatformDefaultAudio;
+#if defined(WEBRTC_LINUX)
+    if (config_.linux_audio_backend == 1)
+      layer = webrtc::AudioDeviceModule::kLinuxPulseAudio;
+    else if (config_.linux_audio_backend == 2)
+      layer = webrtc::AudioDeviceModule::kLinuxAlsaAudio;
+#endif
     if (!rtc_->adm)
-      rtc_->adm = webrtc::CreateAudioDeviceModule(
-          rtc_->env, webrtc::AudioDeviceModule::kPlatformDefaultAudio);
+      rtc_->adm = webrtc::CreateAudioDeviceModule(rtc_->env, layer);
     if (!rtc_->adm || rtc_->adm->Init() != 0) return;
     rtc_->adm->RegisterAudioCallback(rtc_->transport.get());
     RefreshDevices();
@@ -251,20 +269,34 @@ Engine::~Engine() {
   retirer_.ReclaimAll();
   if (!spill_dir_.empty()) {
     std::error_code ec;
-    std::filesystem::remove_all(spill_dir_, ec);
+    std::filesystem::remove_all(Utf8Path(spill_dir_), ec);
   }
 }
 
 void Engine::CleanStaleSpill() {
   std::error_code ec;
   for (const auto& entry :
-       std::filesystem::directory_iterator(config_.spill_dir, ec)) {
-    const std::string name = entry.path().filename().string();
-    if (name.empty() ||
+       std::filesystem::directory_iterator(Utf8Path(config_.spill_dir), ec)) {
+    // u8string(): string() can fail on Windows for names outside the code
+    // page, and this build has no exceptions.
+    const std::u8string u8 = entry.path().filename().u8string();
+    const std::string name(u8.begin(), u8.end());
+    if (name.empty() || name.size() > 9 ||
         !std::all_of(name.begin(), name.end(), ::isdigit))
       continue;
     const long pid = std::strtol(name.c_str(), nullptr, 10);
-#if !defined(_WIN32)
+#if defined(_WIN32)
+    if (pid == static_cast<long>(GetCurrentProcessId())) continue;
+    if (HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                               static_cast<DWORD>(pid))) {
+      DWORD code = 0;
+      const bool alive = GetExitCodeProcess(h, &code) && code == STILL_ACTIVE;
+      CloseHandle(h);
+      if (alive) continue;
+    } else if (GetLastError() == ERROR_ACCESS_DENIED) {
+      continue;
+    }
+#else
     if (pid == static_cast<long>(getpid())) continue;
     if (kill(static_cast<pid_t>(pid), 0) == 0 || errno == EPERM) continue;
 #endif
@@ -546,6 +578,11 @@ void Engine::CaptureBlockIn(const int16_t* in, size_t frames, size_t channels,
     }
   }
   ProcessCapture(in, frames, channels, rate, total_delay_ms);
+}
+
+void Engine::OnHardwareClock(const AudioHardwareClockObservation& o) {
+  if (DriftServo* servo = servo_.load(std::memory_order_acquire))
+    servo->OnHardwareClockObservation(o);
 }
 
 int32_t Engine::ClockCorrectionState(double* applied_ppm, bool* engaged) {

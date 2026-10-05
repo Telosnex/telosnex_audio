@@ -96,8 +96,10 @@ final class _NativeEngine implements AudioEngine {
             ..manual_device = 1
             ..manual_output_channels = channels
             ..manual_delay_ms = delay.inMilliseconds;
-        case PlatformDevice(:final appleVoiceProcessing):
-          ref.platform_voice_processing = appleVoiceProcessing ? 1 : 0;
+        case PlatformDevice(:final appleVoiceProcessing, :final linuxBackend):
+          ref
+            ..platform_voice_processing = appleVoiceProcessing ? 1 : 0
+            ..linux_audio_backend = linuxBackend.index;
       }
       final rc = tsnxEngineOpen(config, out);
       if (rc != 0) {

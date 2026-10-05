@@ -22,6 +22,8 @@ final class TsnxEngineConfig extends Struct {
   external int platform_voice_processing;
   @Int32()
   external int clock_correction;
+  @Int32()
+  external int linux_audio_backend;
   external Pointer<Utf8> spill_dir;
   external Pointer<NativeFunction<Void Function(Int32, Int32, Int64)>> notify;
 }

@@ -1,7 +1,7 @@
 // Ported from the Telosnex libwebrtc fork: test/aec_guarantees/aec_guarantees.test.cc
 // (servo and estimator guarantees; the self-echo gate and tap tests stay in the fork).
-#include <unistd.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>

@@ -25,6 +25,7 @@
 #include <thread>
 #include <vector>
 
+#include "clock/hardware_clock.h"
 #include "track.h"
 #include "util/retirer.h"
 #include "util/spsc_ring.h"
@@ -67,6 +68,9 @@ struct EngineConfig {
   // Capture clock correction (ported from the fork): 0 off, 1 observe,
   // 2 control. Frozen when capture first starts.
   int clock_correction = 0;
+  // Linux: 0 auto (PulseAudio, then ALSA), 1 PulseAudio, 2 ALSA. The Pi
+  // appliance uses ALSA directly.
+  int linux_audio_backend = 0;
   // Seconds of idle output before the output device stops (platform only).
   double idle_stop_seconds = 3.0;
 };
@@ -155,6 +159,8 @@ class Engine : public EventSink {
                       uint32_t rate, uint32_t total_delay_ms);
   // Clock-correction state for diagnostics.
   int32_t ClockCorrectionState(double* applied_ppm, bool* engaged);
+  // ALSA hardware position (device threads). Feeds the drift servo.
+  void OnHardwareClock(const AudioHardwareClockObservation& o);
 
   // EventSink (audio thread).
   void PushRt(const TrackEvent& e) override;

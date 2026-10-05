@@ -4,7 +4,8 @@
 // the default input with echo cancellation, and prints the echo level before
 // and after the APM per second. Nobody should talk during the run.
 //
-//   echo_probe [seconds] [--no-aec] [--gain g]
+//   echo_probe [seconds] [--no-aec] [--gain g] [--alsa | --pulse]
+//              [--clock observe|control] [--device <id for both>]
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -40,11 +41,19 @@ int main(int argc, char** argv) {
   bool vp = false;
   bool ns = false;
   double gain = 0.5;
+  int backend = 0;
+  int clock = 0;
+  const char* device = nullptr;
   for (int i = 1; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--no-aec")) aec = false;
     else if (!std::strcmp(argv[i], "--apple-vp")) vp = true;
     else if (!std::strcmp(argv[i], "--ns")) ns = true;
     else if (!std::strcmp(argv[i], "--gain") && i + 1 < argc) gain = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--pulse")) backend = 1;
+    else if (!std::strcmp(argv[i], "--alsa")) backend = 2;
+    else if (!std::strcmp(argv[i], "--device") && i + 1 < argc) device = argv[++i];
+    else if (!std::strcmp(argv[i], "--clock") && i + 1 < argc)
+      clock = !std::strcmp(argv[++i], "control") ? 2 : 1;
     else seconds = std::atoi(argv[i]);
   }
   const auto mp3 = ReadFile(TSNX_FIXTURES "/shine_24k_mono_64k.mp3");
@@ -55,6 +64,8 @@ int main(int argc, char** argv) {
   c.platform_voice_processing = vp;
   c.noise_suppression = ns;  // off by default: measure echo removal only
   c.auto_gain = 0;
+  c.linux_audio_backend = backend;
+  c.clock_correction = clock;
   c.notify = &OnNotify;
   tsnx_engine* e = nullptr;
   if (tsnx_engine_open(&c, &e) != 0) {
@@ -67,6 +78,11 @@ int main(int argc, char** argv) {
       if (tsnx_device_get(e, k, i, id, sizeof id, name, sizeof name) == 0)
         std::fprintf(stderr, "%s[%d] %s (id %s)\n", k ? "in" : "out", i, name, id);
 
+  if (device) {
+    tsnx_device_select(e, 0, device, 3);
+    tsnx_device_select(e, 1, device, 4);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  }
   tsnx_capture_start(e, 48000, 1);
   std::this_thread::sleep_for(std::chrono::milliseconds(1500));
   double pre = 0, post = 0;
@@ -107,6 +123,13 @@ int main(int argc, char** argv) {
   for (double d : supp) mean += d;
   if (!supp.empty()) mean /= supp.size();
   std::fprintf(stderr, "mean echo removed after 3 s: %.1f dB\n", mean);
+  if (clock) {
+    double ppm = 0;
+    int32_t engaged = 0;
+    const int mode = tsnx_engine_clock_state(e, &ppm, &engaged);
+    std::fprintf(stderr, "clock correction: mode %d, engaged %d, %.0f ppm\n",
+                 mode, engaged, ppm);
+  }
   tsnx_capture_stop(e, 2);
   tsnx_engine_close(e);
   return 0;

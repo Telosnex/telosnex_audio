@@ -1,6 +1,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
+#if defined(_WIN32)
+#include <malloc.h>
+#endif
 
 #include "alloc_probe.h"
 #include "test.h"
@@ -30,16 +33,31 @@ void* operator new(size_t n, const std::nothrow_t&) noexcept {
 }
 void* operator new(size_t n, std::align_val_t a) {
   tsnx_probe_note_alloc();
+  const size_t align =
+      static_cast<size_t>(a) < sizeof(void*) ? sizeof(void*)
+                                             : static_cast<size_t>(a);
+#if defined(_WIN32)
+  if (void* p = _aligned_malloc(n ? n : 1, align)) return p;
+  std::abort();
+#else
   void* p = nullptr;
-  if (posix_memalign(&p, static_cast<size_t>(a) < sizeof(void*) ? sizeof(void*) : static_cast<size_t>(a), n ? n : 1) != 0) std::abort();
+  if (posix_memalign(&p, align, n ? n : 1) != 0) std::abort();
   return p;
+#endif
 }
 void operator delete(void* p) noexcept { std::free(p); }
 void operator delete[](void* p) noexcept { std::free(p); }
 void operator delete(void* p, size_t) noexcept { std::free(p); }
 void operator delete[](void* p, size_t) noexcept { std::free(p); }
+#if defined(_WIN32)
+void operator delete(void* p, std::align_val_t) noexcept { _aligned_free(p); }
+void operator delete(void* p, size_t, std::align_val_t) noexcept {
+  _aligned_free(p);
+}
+#else
 void operator delete(void* p, std::align_val_t) noexcept { std::free(p); }
 void operator delete(void* p, size_t, std::align_val_t) noexcept { std::free(p); }
+#endif
 
 int main(int argc, char** argv) {
   const char* filter = argc > 1 ? argv[1] : nullptr;

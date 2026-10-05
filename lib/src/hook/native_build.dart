@@ -24,7 +24,8 @@ const assetName = 'src/ffi.dart';
 /// Targets with an engine. Other targets get no asset; the Dart API then
 /// reports the engine as unavailable (ADR workplan step 6).
 bool isSupportedTarget(OS os, Architecture arch) =>
-    os == OS.macOS && (arch == Architecture.arm64 || arch == Architecture.x64);
+    (os == OS.macOS || os == OS.linux || os == OS.windows) &&
+    (arch == Architecture.arm64 || arch == Architecture.x64);
 
 Future<void> buildNative(BuildInput input, BuildOutputBuilder output) async {
   if (!input.config.buildCodeAssets) return;
@@ -161,13 +162,19 @@ Future<File> _buildFromSource(
   String libName,
 ) async {
   final code = input.config.code;
-  final cmake = _findTool('cmake');
+  // Windows: CMake, Ninja, and cl.exe come from the Visual Studio developer
+  // environment that the Flutter tool found.
+  final env = os == OS.windows ? await _msvcEnvironment(code, arch) : null;
+  final cmake = _findTool('cmake', env);
   if (cmake == null) {
     throw StateError(
-      'telosnex_audio needs CMake 3.22+ to build from source. Install it (brew install cmake ninja).',
+      'telosnex_audio needs CMake 3.22+ to build from source. '
+      'macOS: brew install cmake ninja. Linux: sudo apt install cmake ninja-build. '
+      'Windows: the Visual Studio "C++ CMake tools" component.',
     );
   }
-  final ninja = _findTool('ninja');
+  final ninja = _findTool('ninja', env);
+  final linuxCompilers = os == OS.linux ? _linuxCompilers(code) : null;
   final buildDir = Directory.fromUri(
     input.outputDirectoryShared.resolve(
       'cmake-${os.name}-${arch.name}-$buildType/',
@@ -184,6 +191,16 @@ Future<File> _buildFromSource(
       '-DCMAKE_OSX_ARCHITECTURES=${arch == Architecture.arm64 ? 'arm64' : 'x86_64'}',
       '-DCMAKE_OSX_DEPLOYMENT_TARGET=${code.macOS.targetVersion}',
     ],
+    if (linuxCompilers != null) ...[
+      '-DCMAKE_C_COMPILER=${linuxCompilers.$1}',
+      '-DCMAKE_CXX_COMPILER=${linuxCompilers.$2}',
+    ],
+    if (os == OS.windows) ...[
+      '-DCMAKE_C_COMPILER=cl',
+      '-DCMAKE_CXX_COMPILER=cl',
+    ],
+    if (os != OS.macOS)
+      '-DTSNX_TARGET_ARCH=${arch == Architecture.arm64 ? 'arm64' : 'x64'}',
   ];
   final cache = File('${buildDir.path}/CMakeCache.txt');
   final stamp = File('${buildDir.path}/tsnx_configure_args.txt');
@@ -192,7 +209,7 @@ Future<File> _buildFromSource(
       !stamp.existsSync() ||
       stamp.readAsStringSync() != argsText) {
     buildDir.createSync(recursive: true);
-    await _run(cmake, configureArgs);
+    await _run(cmake, configureArgs, env);
     stamp.writeAsStringSync(argsText);
   }
   await _run(cmake, [
@@ -202,13 +219,64 @@ Future<File> _buildFromSource(
     'telosnex_audio',
     '--parallel',
     '${Platform.numberOfProcessors}',
-  ]);
+  ], env);
   return File('${buildDir.path}/$libName');
 }
 
-String? _findTool(String name) {
+/// The C and C++ compilers for Linux: the Flutter tool's clang when it gives
+/// one, else CMake's default.
+(String, String)? _linuxCompilers(CodeConfig code) {
+  final cc = code.cCompiler?.compiler.toFilePath();
+  if (cc == null) return null;
+  final dir = File(cc).parent.path;
+  final name = File(cc).uri.pathSegments.last;
+  final cxx = name.contains('clang')
+      ? name.replaceFirst('clang', 'clang++')
+      : name.replaceFirst('gcc', 'g++');
+  final cxxPath = '$dir/$cxx';
+  if (!File(cxxPath).existsSync()) return null;
+  return (cc, cxxPath);
+}
+
+/// Runs the Visual Studio developer prompt script and returns its
+/// environment.
+Future<Map<String, String>> _msvcEnvironment(
+  CodeConfig code,
+  Architecture arch,
+) async {
+  final prompt = code.cCompiler?.windows.developerCommandPrompt;
+  if (prompt == null) {
+    throw StateError(
+      'telosnex_audio needs the Visual Studio C++ build tools on Windows.',
+    );
+  }
+  final r = await Process.run('cmd', [
+    '/c',
+    prompt.script.toFilePath(),
+    ...prompt.arguments,
+    '&&',
+    'set',
+  ]);
+  if (r.exitCode != 0) {
+    throw ProcessException(
+      prompt.script.toFilePath(),
+      prompt.arguments,
+      '${r.stdout}\n${r.stderr}',
+      r.exitCode,
+    );
+  }
+  final env = <String, String>{};
+  for (final line in (r.stdout as String).split(RegExp(r'\r?\n'))) {
+    final eq = line.indexOf('=');
+    if (eq > 0) env[line.substring(0, eq)] = line.substring(eq + 1);
+  }
+  return env;
+}
+
+String? _findTool(String name, [Map<String, String>? env]) {
   final exe = Platform.isWindows ? '$name.exe' : name;
-  final path = Platform.environment['PATH'] ?? '';
+  final path =
+      env?['Path'] ?? env?['PATH'] ?? Platform.environment['PATH'] ?? '';
   final dirs = [
     ...path.split(Platform.isWindows ? ';' : ':'),
     '/opt/homebrew/bin',
@@ -223,8 +291,17 @@ String? _findTool(String name) {
   return null;
 }
 
-Future<void> _run(String exe, List<String> args) async {
-  final r = await Process.run(exe, args);
+Future<void> _run(
+  String exe,
+  List<String> args, [
+  Map<String, String>? env,
+]) async {
+  final r = await Process.run(
+    exe,
+    args,
+    environment: env,
+    includeParentEnvironment: env == null,
+  );
   if (r.exitCode != 0) {
     throw ProcessException(exe, args, '${r.stdout}\n${r.stderr}', r.exitCode);
   }

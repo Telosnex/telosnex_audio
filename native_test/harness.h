@@ -7,8 +7,14 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <unistd.h>
 #include <string>
+#if defined(_WIN32)
+#include <process.h>
+#define TSNX_GETPID _getpid
+#else
+#include <unistd.h>
+#define TSNX_GETPID getpid
+#endif
 #include <vector>
 
 #include "test.h"
@@ -120,8 +126,11 @@ inline int MaxStep(const int16_t* x, size_t n, size_t stride = 1) {
 
 inline std::string TempDir(const char* name) {
   const char* t = std::getenv("TMPDIR");
+#if defined(_WIN32)
+  if (!t) t = std::getenv("TEMP");
+#endif
   std::string d = std::string(t ? t : "/tmp") + "/tsnx_test_" + name + "_" +
-                  std::to_string(::getpid());
+                  std::to_string(TSNX_GETPID());
   return d;
 }
 

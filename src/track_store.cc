@@ -6,7 +6,11 @@
 #include <cstring>
 
 #if defined(_WIN32)
+#include <fcntl.h>
 #include <io.h>
+#include <sys/stat.h>
+
+#include "util/utf8_path.h"
 #else
 #include <fcntl.h>
 #include <unistd.h>
@@ -198,8 +202,9 @@ bool TrackStore::SpillChunk(Chunk* c) {
   if (spill_path_.empty()) return false;
   if (spill_fd_ < 0) {
 #if defined(_WIN32)
-    spill_fd_ = _open(spill_path_.c_str(),
-                      _O_RDWR | _O_CREAT | _O_TRUNC | _O_BINARY, 0600);
+    spill_fd_ = _wopen(Utf8Path(spill_path_).c_str(),
+                       _O_RDWR | _O_CREAT | _O_TRUNC | _O_BINARY,
+                       _S_IREAD | _S_IWRITE);
 #else
     spill_fd_ = open(spill_path_.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0600);
 #endif

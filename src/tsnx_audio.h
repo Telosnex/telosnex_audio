@@ -60,6 +60,7 @@ typedef struct {
   int32_t auto_gain;
   int32_t platform_voice_processing;  // macOS: Apple voice processing
   int32_t clock_correction;  // 0 off, 1 observe, 2 control (fork port)
+  int32_t linux_audio_backend;  // 0 auto, 1 PulseAudio, 2 ALSA
   const char* spill_dir;           // UTF-8; may be null (no spill)
   tsnx_notify_fn notify;
 } tsnx_engine_config;

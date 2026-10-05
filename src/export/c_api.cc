@@ -47,6 +47,7 @@ TSNX_EXPORT int32_t tsnx_engine_open(const tsnx_engine_config* c,
   config.auto_gain = c->auto_gain != 0;
   config.platform_voice_processing = c->platform_voice_processing != 0;
   config.clock_correction = c->clock_correction;
+  config.linux_audio_backend = c->linux_audio_backend;
   if (c->spill_dir) config.spill_dir = c->spill_dir;
   config.notify = c->notify;
   int32_t error = 0;

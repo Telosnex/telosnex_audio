@@ -140,12 +140,22 @@ sealed class EngineDevice {
 
 /// The platform's audio device.
 final class PlatformDevice extends EngineDevice {
-  const PlatformDevice({this.appleVoiceProcessing = false});
+  const PlatformDevice({
+    this.appleVoiceProcessing = false,
+    this.linuxBackend = LinuxAudioBackend.auto,
+  });
 
   /// macOS: AVAudioEngine with Apple voice processing instead of CoreAudio
   /// with WebRTC's AEC3. For comparisons; AEC3 is the default.
   final bool appleVoiceProcessing;
+
+  /// Linux: the sound system to open.
+  final LinuxAudioBackend linuxBackend;
 }
+
+/// Linux sound systems. [auto] tries PulseAudio (or PipeWire's PulseAudio
+/// server) first, then ALSA.
+enum LinuxAudioBackend { auto, pulseAudio, alsa }
 
 /// No device: tests drive the engine with [AudioEngine.renderManual].
 final class ManualDevice extends EngineDevice {
