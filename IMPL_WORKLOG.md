@@ -69,3 +69,11 @@ Design:
 - Clock: render clock = AudioContext frame time. delay = baseLatency + outputLatency. Dart nowNs() from
   getOutputTimestamp + latency. HeardPosition(nowNs) does not depend on the latency value.
 - Capture (D15 web): getUserMedia (browser AEC) into the same node; wasm resampler to the asked rate.
+Status (2026-10-05):
+- Code done. 13 engine cases pass in Chrome (flutter test --platform chrome test/web_engine_test.dart) and
+  12 on the VM. Real-time gate (example/lib/web_check.dart via tool/web_check.dart): headless Chrome 154 and
+  Chrome on the speakers PASS, dart2js and dart2wasm. p95 ~10 ms, far seeks 51-59 ms.
+- Open: Safari run needs a click (autoplay) -> `dart tool/web_check.dart --browser safari`.
+  Firefox is not installed. App side (step 6 flag, then remove LocalPcmPlayout/just_audio) not started.
+- flutter test web serves package:telosnex_audio/ at /packages/telosnex_audio/, not Flutter assets:
+  engine_web falls back to that URL when the asset 404s. test/fixtures links to native_test/fixtures.

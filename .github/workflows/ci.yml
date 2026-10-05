@@ -296,3 +296,5 @@ jobs:
           set -euo pipefail
           (cd example && flutter pub get && flutter build web -t lib/web_check.dart)
           dart tool/web_check.dart --browser chrome
+          (cd example && flutter build web --wasm -t lib/web_check.dart)
+          dart tool/web_check.dart --browser chrome

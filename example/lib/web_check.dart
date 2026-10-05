@@ -145,6 +145,7 @@ Future<void> report() async {
 
 Future<void> run(AudioEngine engine) async {
   log('user agent: ${web.window.navigator.userAgent}');
+  log('dart2wasm: ${const bool.fromEnvironment('dart.tool.dart2wasm')}');
   debugSetOutputDelay(engine, Duration.zero);
   final tap = await debugTapOutput(engine);
   log('context rate ${tap.sampleRate}');
