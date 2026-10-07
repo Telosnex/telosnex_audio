@@ -5,6 +5,13 @@
 // equals [prebuiltSourceHash]. Otherwise it builds from source.
 
 // dart format off
-const String? prebuiltReleaseTag = null;
-const String prebuiltSourceHash = '';
-const Map<String, String> prebuiltSha256 = {};
+const String? prebuiltReleaseTag = 'native-0.1.0';
+const String prebuiltSourceHash = 'f1e9d6c81435e137b8a10911e5f82689ecb477cbdaaa211ae2aadf5ee24389a6';
+const Map<String, String> prebuiltSha256 = {
+  'linux-arm64/libtelosnex_audio.so': 'd27c3ff1df4b29c61507f798b9c95fba67d1c9058342cc7a8a6bb25f9d2361fb',
+  'linux-x64/libtelosnex_audio.so': '5da8f9e29f4e7c1db4dff702f8121d25534a8c6aa1dff2c48ad1ba2aed795042',
+  'macos-arm64/libtelosnex_audio.dylib': '88148154956e0f2a5e371aa45d343e8e8b23e50139df3f754159d45670ff23c8',
+  'macos-x64/libtelosnex_audio.dylib': '8aae69a960a72bc5831c81cff95377d8cf65c0408252366ef573bedb0bc5da2c',
+  'windows-arm64/telosnex_audio.dll': '8c53367483d0ab05371c20db24b2c6cecca6b2b802e3a2e53d7f32d4c5fda86f',
+  'windows-x64/telosnex_audio.dll': '444f2217840af0bb46e8ace28144423838da2260fbe77e860e5cd8a94221cbc0',
+};
