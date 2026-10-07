@@ -1,7 +1,12 @@
 // Writes lib/src/hook/prebuilt.g.dart for a published prebuilt release.
 //
-//   dart run tool/write_prebuilt_manifest.dart --tag <tag> --assets <dir>
-//   dart run tool/write_prebuilt_manifest.dart --print-hash
+// Run with the VM directly after `flutter pub get`, so this metadata-only
+// tool does not invoke the package's native build hook:
+//
+//   dart --disable-dart-dev --packages=.dart_tool/package_config.json \
+//     tool/write_prebuilt_manifest.dart --tag <tag> --assets <dir>
+//   dart --disable-dart-dev --packages=.dart_tool/package_config.json \
+//     tool/write_prebuilt_manifest.dart --print-hash
 //
 // <dir> holds files named `<os>-<arch>-<library file>`, for example
 // `macos-arm64-libtelosnex_audio.dylib`, exactly as uploaded to the release.
