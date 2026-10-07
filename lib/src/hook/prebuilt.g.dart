@@ -5,7 +5,8 @@
 // equals [prebuiltSourceHash]. Otherwise it builds from source.
 
 // dart format off
-const String? prebuiltReleaseTag = 'native-0.1.0';
+// Nullable getter: unpublished manifests may return null.
+String? get prebuiltReleaseTag => 'native-0.1.0';
 const String prebuiltSourceHash = 'f1e9d6c81435e137b8a10911e5f82689ecb477cbdaaa211ae2aadf5ee24389a6';
 const Map<String, String> prebuiltSha256 = {
   'linux-arm64/libtelosnex_audio.so': 'd27c3ff1df4b29c61507f798b9c95fba67d1c9058342cc7a8a6bb25f9d2361fb',

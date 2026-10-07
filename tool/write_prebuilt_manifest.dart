@@ -58,7 +58,8 @@ void main(List<String> args) {
     )
     ..writeln()
     ..writeln('// dart format off')
-    ..writeln("const String? prebuiltReleaseTag = '$tag';")
+    ..writeln('// Nullable getter: unpublished manifests may return null.')
+    ..writeln("String? get prebuiltReleaseTag => '$tag';")
     ..writeln("const String prebuiltSourceHash = '$hash';")
     ..writeln('const Map<String, String> prebuiltSha256 = {');
   for (final e in entries.entries) {
