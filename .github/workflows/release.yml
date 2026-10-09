@@ -43,15 +43,14 @@ jobs:
             runner: macos-15
             cmake_args: -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
             lib: libtelosnex_audio.dylib
-          # Linux builds run in Debian bookworm (glibc 2.36), the Raspberry Pi
-          # OS base, so one library loads on the Pi and on newer desktops.
+          # Linux builds on Ubuntu 22.04, so the library needs glibc 2.35 or
+          # newer: Ubuntu 22.04, the snap base core24, and Raspberry Pi OS
+          # trixie (fllama ADR 005 R8, R9, D8).
           - target: linux-x64
-            runner: ubuntu-24.04
-            container: debian:bookworm
+            runner: ubuntu-22.04
             lib: libtelosnex_audio.so
           - target: linux-arm64
-            runner: ubuntu-24.04-arm
-            container: debian:bookworm
+            runner: ubuntu-22.04-arm
             lib: libtelosnex_audio.so
           - target: windows-x64
             runner: windows-2025-vs2026
@@ -64,7 +63,6 @@ jobs:
             cmake_args: -DTSNX_TARGET_ARCH=arm64
             lib: telosnex_audio.dll
     runs-on: ${{ matrix.runner }}
-    container: ${{ matrix.container }}
     timeout-minutes: 40
     steps:
       - name: Checkout
@@ -81,8 +79,8 @@ jobs:
         if: startsWith(matrix.target, 'linux')
         run: |
           set -euo pipefail
-          apt-get update -q
-          apt-get install -y -q cmake ninja-build g++ libasound2-dev libpulse-dev
+          sudo apt-get update -q
+          sudo apt-get install -y -q cmake ninja-build g++ libasound2-dev libpulse-dev
 
       - name: Build (macOS, Linux)
         if: ${{ !startsWith(matrix.target, 'windows') }}
@@ -96,6 +94,14 @@ jobs:
             macos-*) strip -x "dist/${{ matrix.target }}-${{ matrix.lib }}" ;;
             *) strip --strip-unneeded "dist/${{ matrix.target }}-${{ matrix.lib }}" ;;
           esac
+
+      - name: Check the glibc requirement (Linux)
+        if: startsWith(matrix.target, 'linux')
+        run: |
+          set -euo pipefail
+          newest="$(objdump -T "dist/${{ matrix.target }}-${{ matrix.lib }}" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
+          echo "Newest glibc requirement: $newest"
+          test "$(printf '%s\n' GLIBC_2.35 "$newest" | sort -V | tail -1)" = GLIBC_2.35
 
       - name: Build (Windows)
         if: startsWith(matrix.target, 'windows')
