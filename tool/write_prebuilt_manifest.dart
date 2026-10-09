@@ -4,10 +4,13 @@
 // tool does not invoke the package's native build hook:
 //
 //   dart --disable-dart-dev --packages=.dart_tool/package_config.json \
-//     tool/write_prebuilt_manifest.dart --tag <tag> --assets <dir>
+//     tool/write_prebuilt_manifest.dart --assets <dir>
 //   dart --disable-dart-dev --packages=.dart_tool/package_config.json \
-//     tool/write_prebuilt_manifest.dart --print-hash
+//     tool/write_prebuilt_manifest.dart --print-hash | --print-tag
 //
+// The release tag is `native-` and the first 16 hex digits of the native
+// source hash, as in image_ffmpeg, fllama and zxing_dart. The tag names the
+// source that the files were built from.
 // <dir> holds files named `<os>-<arch>-<library file>`, for example
 // `macos-arm64-libtelosnex_audio.dylib`, exactly as uploaded to the release.
 import 'dart:io';
@@ -18,18 +21,21 @@ import 'package:telosnex_audio/src/hook/native_build.dart';
 void main(List<String> args) {
   final root = Directory(File.fromUri(Platform.script).parent.parent.path);
   final hash = nativeSourceHash(root, nativeSourceFiles(root));
+  final tag = 'native-${hash.substring(0, 16)}';
   if (args.contains('--print-hash')) {
     stdout.writeln(hash);
     return;
   }
-  String? tag;
+  if (args.contains('--print-tag')) {
+    stdout.writeln(tag);
+    return;
+  }
   String? assets;
   for (var i = 0; i < args.length; i++) {
-    if (args[i] == '--tag') tag = args[++i];
     if (args[i] == '--assets') assets = args[++i];
   }
-  if (tag == null || assets == null) {
-    stderr.writeln('usage: --tag <tag> --assets <dir> | --print-hash');
+  if (assets == null) {
+    stderr.writeln('usage: --assets <dir> | --print-hash | --print-tag');
     exit(64);
   }
   final entries = <String, String>{};
