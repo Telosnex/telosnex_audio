@@ -126,7 +126,6 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
-      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
@@ -174,9 +173,10 @@ jobs:
           gh release create "$TAG" dist/* --target "$GITHUB_SHA" \
             --title "$TAG" --notes "Prebuilt telosnex_audio native libraries for $GITHUB_SHA."
 
-      - name: Open the pin pull request
-        env:
-          GH_TOKEN: ${{ github.token }}
+      # Workflows may not open pull requests (org setting), and main requires
+      # a pull request with passing CI. A person opens the pull request from
+      # this branch; that also runs CI, which a GITHUB_TOKEN push does not.
+      - name: Push the pin branch
         run: |
           set -euo pipefail
           branch="pin-$TAG"
@@ -186,5 +186,5 @@ jobs:
           git add lib/src/hook/prebuilt.g.dart
           git commit -m "Pin prebuilt release $TAG"
           git push origin "$branch"
-          gh pr create --base main --head "$branch" --title "Pin prebuilt release $TAG" \
-            --body "Points the native-assets hook at release $TAG. The hook still builds from source when the native source hash differs."
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$branch?expand=1"
+          echo "Open the pin pull request: $url" | tee -a "$GITHUB_STEP_SUMMARY"
