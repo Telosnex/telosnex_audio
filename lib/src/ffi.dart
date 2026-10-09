@@ -26,6 +26,10 @@ final class TsnxEngineConfig extends Struct {
   external int linux_audio_backend;
   external Pointer<Utf8> spill_dir;
   external Pointer<NativeFunction<Void Function(Int32, Int32, Int64)>> notify;
+  @Int64()
+  external int notify_port;
+  external Pointer<NativeFunction<Bool Function(Int64, Pointer<Void>)>>
+  post_cobject;
 }
 
 final class TsnxTrackState extends Struct {

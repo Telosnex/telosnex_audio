@@ -51,6 +51,7 @@ enum class NotifyKind : int32_t {
 };
 
 using NotifyFn = void (*)(int32_t kind, int32_t id, int64_t value);
+using PostCObjectFn = bool (*)(int64_t port, void* message);
 
 struct EngineConfig {
   bool manual_device = false;
@@ -58,6 +59,10 @@ struct EngineConfig {
   int manual_delay_ms = 0;
   std::string spill_dir;
   NotifyFn notify = nullptr;
+  // When set, events go to the Dart port `notify_port` instead of `notify`
+  // (tsnx_engine_config).
+  int64_t notify_port = 0;
+  PostCObjectFn post_cobject = nullptr;
   // APM switches. Defaults: AEC3, noise suppression, AGC2, high-pass.
   bool echo_cancellation = true;
   bool noise_suppression = true;
@@ -200,6 +205,7 @@ class Engine : public EventSink {
   void PublishAll(int64_t now_ns);
   void IdleApply();
   void Notify(int32_t kind, int32_t id, int64_t value);  // non-audio threads
+  void Deliver(int32_t kind, int32_t id, int64_t value);  // NotifierPass
   void ControlPass();
   void NotifierPass();
   void ControlLoop();

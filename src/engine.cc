@@ -26,6 +26,7 @@
 #include "api/environment/environment_factory.h"
 #include "block_resampler.h"
 #include "clock/audio_clock_correction.h"
+#include "util/dart_cobject.h"
 #include "util/utf8_path.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
 #if defined(__APPLE__)
@@ -1160,21 +1161,39 @@ void Engine::ControlLoop() {
   }
 }
 
+void Engine::Deliver(int32_t kind, int32_t id, int64_t value) {
+  if (config_.post_cobject) {
+    DartCObject items[3];
+    DartCObject* refs[3] = {&items[0], &items[1], &items[2]};
+    const int64_t fields[3] = {kind, id, value};
+    for (int i = 0; i < 3; ++i) {
+      items[i].type = kDartCObjectInt64;
+      items[i].value.as_int64 = fields[i];
+    }
+    DartCObject list;
+    list.type = kDartCObjectArray;
+    list.value.as_array.length = 3;
+    list.value.as_array.values = refs;
+    // False when the port is closed: the isolate that opened the engine is
+    // gone. The event is dropped.
+    config_.post_cobject(config_.notify_port, &list);
+    return;
+  }
+  if (config_.notify) config_.notify(kind, id, value);
+}
+
 void Engine::NotifierPass() {
-  NotifyFn fn = config_.notify;
   TrackEvent e;
-  while (rt_events_.Pop(&e))
-    if (fn) fn(e.kind, e.track_id, e.value);
+  while (rt_events_.Pop(&e)) Deliver(e.kind, e.track_id, e.value);
   std::deque<TrackEvent> pending;
   {
     std::lock_guard<std::mutex> lock(events_mu_);
     pending.swap(events_);
   }
-  for (const auto& p : pending)
-    if (fn) fn(p.kind, p.track_id, p.value);
-  if (capture_signal_.exchange(false) && fn)
-    fn(static_cast<int32_t>(NotifyKind::kCaptureReady), 0,
-       static_cast<int64_t>(capture_ring_.Size()));
+  for (const auto& p : pending) Deliver(p.kind, p.track_id, p.value);
+  if (capture_signal_.exchange(false))
+    Deliver(static_cast<int32_t>(NotifyKind::kCaptureReady), 0,
+            static_cast<int64_t>(capture_ring_.Size()));
 }
 
 void Engine::NotifierLoop() {

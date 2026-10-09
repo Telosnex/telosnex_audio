@@ -7,6 +7,7 @@
 #ifndef TSNX_AUDIO_H_
 #define TSNX_AUDIO_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #if defined(_WIN32)
@@ -51,6 +52,9 @@ typedef struct tsnx_engine tsnx_engine;
 #define TSNX_NOTIFY_OUTPUT_STATE 104  // value: 1 running, 0 stopped
 
 typedef void (*tsnx_notify_fn)(int32_t kind, int32_t id, int64_t value);
+// Dart_PostCObject (Dart: NativeApi.postCObject). `message` is a
+// Dart_CObject.
+typedef bool (*tsnx_post_cobject_fn)(int64_t port, void* message);
 
 typedef struct {
   int32_t manual_device;           // 1: no device; drive with manual_render
@@ -63,7 +67,16 @@ typedef struct {
   int32_t clock_correction;  // 0 off, 1 observe, 2 control (fork port)
   int32_t linux_audio_backend;  // 0 auto, 1 PulseAudio, 2 ALSA
   const char* spill_dir;           // UTF-8; may be null (no spill)
+  // Events go to `notify`, or, when `post_cobject` is set, to the Dart port
+  // `notify_port` as the list [kind, id, value]. Use the port from Dart: the
+  // engine can outlive its isolate (a hot restart does not close it), and
+  // calling a callback of an isolate that is gone crashes the process. A
+  // closed port drops the event. The port also gets null messages: the next
+  // tsnx_engine_open uses them to find and close engines whose port is
+  // closed. Ignore them.
   tsnx_notify_fn notify;
+  int64_t notify_port;
+  tsnx_post_cobject_fn post_cobject;  // Dart DL API major version 2
 } tsnx_engine_config;
 
 typedef struct {
@@ -86,6 +99,8 @@ typedef struct {
 
 TSNX_EXPORT const char* tsnx_version(void);
 
+// Open first closes the engines whose event port is closed (their isolate
+// is gone; see tsnx_engine_config). Their handles become invalid.
 TSNX_EXPORT int32_t tsnx_engine_open(const tsnx_engine_config* config,
                                      tsnx_engine** out);
 TSNX_EXPORT void tsnx_engine_close(tsnx_engine* e);

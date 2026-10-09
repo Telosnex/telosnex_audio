@@ -1,11 +1,19 @@
+#include <algorithm>
 #include <cstring>
+#include <mutex>
 #include <string>
+#include <vector>
 
 #include "engine.h"
 #include "tsnx_audio.h"
+#include "util/dart_cobject.h"
 
 struct tsnx_engine {
   std::unique_ptr<tsnx::Engine> engine;
+  // The owner's event port (tsnx_engine_config); post_cobject is null when
+  // events go to a callback.
+  int64_t notify_port = 0;
+  tsnx_post_cobject_fn post_cobject = nullptr;
 };
 
 static_assert(sizeof(tsnx_track_state) == sizeof(tsnx::TrackStateWords));
@@ -28,6 +36,41 @@ static_assert(static_cast<int>(tsnx::DeviceKind::kOther) ==
 
 namespace {
 tsnx::Engine* E(tsnx_engine* e) { return e ? e->engine.get() : nullptr; }
+
+// Open engines. A Flutter hot restart ends the isolate that opened an engine
+// without closing it; the engine keeps the device. tsnx_engine_open closes
+// such engines so that one engine owns the device (ADR I9).
+std::mutex& OpenEnginesMutex() {
+  static std::mutex mu;
+  return mu;
+}
+std::vector<tsnx_engine*>& OpenEngines() {
+  static auto* engines = new std::vector<tsnx_engine*>();
+  return *engines;
+}
+
+// True when the owner's event port is closed: its isolate is gone. A live
+// owner gets a null message, which it ignores.
+bool OwnerGone(tsnx_engine* e) {
+  if (!e->post_cobject) return false;
+  tsnx::DartCObject ping;
+  ping.type = tsnx::kDartCObjectNull;
+  return !e->post_cobject(e->notify_port, &ping);
+}
+
+// Closes the engines whose owner is gone.
+void CloseOrphans() {
+  std::vector<tsnx_engine*> orphans;
+  {
+    std::lock_guard<std::mutex> lock(OpenEnginesMutex());
+    auto& open = OpenEngines();
+    auto gone = std::stable_partition(
+        open.begin(), open.end(), [](tsnx_engine* e) { return !OwnerGone(e); });
+    orphans.assign(gone, open.end());
+    open.erase(gone, open.end());
+  }
+  for (auto* e : orphans) delete e;
+}
 int64_t MapWrite(int64_t r) {
   switch (r) {
     case tsnx::kStoreFull:
@@ -67,14 +110,31 @@ TSNX_EXPORT int32_t tsnx_engine_open(const tsnx_engine_config* c,
   config.linux_audio_backend = c->linux_audio_backend;
   if (c->spill_dir) config.spill_dir = c->spill_dir;
   config.notify = c->notify;
+  config.notify_port = c->notify_port;
+  config.post_cobject = c->post_cobject;
+  // Before Open, so that the orphan releases the device first.
+  CloseOrphans();
   int32_t error = 0;
   auto engine = tsnx::Engine::Open(config, &error);
   if (!engine) return error ? error : TSNX_ERR_DEVICE;
-  *out = new tsnx_engine{std::move(engine)};
+  auto* e = new tsnx_engine{std::move(engine), c->notify_port, c->post_cobject};
+  {
+    std::lock_guard<std::mutex> lock(OpenEnginesMutex());
+    OpenEngines().push_back(e);
+  }
+  *out = e;
   return TSNX_OK;
 }
 
-TSNX_EXPORT void tsnx_engine_close(tsnx_engine* e) { delete e; }
+TSNX_EXPORT void tsnx_engine_close(tsnx_engine* e) {
+  if (!e) return;
+  {
+    std::lock_guard<std::mutex> lock(OpenEnginesMutex());
+    auto& open = OpenEngines();
+    open.erase(std::remove(open.begin(), open.end(), e), open.end());
+  }
+  delete e;
+}
 
 TSNX_EXPORT int64_t tsnx_engine_now_ns(tsnx_engine* e) {
   return E(e) ? E(e)->NowNs() : 0;

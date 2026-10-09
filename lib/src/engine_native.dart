@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:meta/meta.dart';
 
 import 'ffi.dart';
 import 'types.dart';
@@ -35,6 +37,11 @@ Future<AudioEngine> openEngine({
   return _NativeEngine.open(device, processing, spillDir);
 }
 
+/// The native engine behind [engine], for tests that drive the C API.
+@visibleForTesting
+Pointer<TsnxEngine> nativeEngineHandle(AudioEngine engine) =>
+    (engine as _NativeEngine)._e;
+
 const _kTrackStarted = 1;
 const _kTrackStarved = 2;
 const _kTrackResumed = 3;
@@ -45,6 +52,9 @@ const _kCaptureReady = 100;
 const _kRequestDone = 101;
 const _kDevicesChanged = 102;
 const _kEngineError = 103;
+
+// The Dart_CObject layout the engine posts (src/util/dart_cobject.h).
+const _kDartApiMajorVersion = 2;
 
 const _kWriteFull = -101;
 const _kWriteEnded = -102;
@@ -67,18 +77,30 @@ void _check(int code, String what) {
 }
 
 final class _NativeEngine implements AudioEngine {
-  _NativeEngine._(this._e, this._listener, this._manual);
+  _NativeEngine._(this._e, this._events, this._manual);
 
   static Future<_NativeEngine> open(
     EngineDevice device,
     AudioProcessingConfig processing,
     String? spillDir,
   ) async {
+    if (NativeApi.majorVersion != _kDartApiMajorVersion) {
+      throw UnsupportedError(
+        'telosnex_audio needs Dart API major version $_kDartApiMajorVersion, '
+        'not ${NativeApi.majorVersion}',
+      );
+    }
+    // Events arrive on a port, not a NativeCallable: the engine can outlive
+    // this isolate (a hot restart does not close it), and a port of a dead
+    // isolate drops messages where a dead callback crashes the process. The
+    // next open closes an engine whose port is closed.
     late final _NativeEngine engine;
-    final listener =
-        NativeCallable<Void Function(Int32, Int32, Int64)>.listener(
-          (int kind, int id, int value) => engine._onNotify(kind, id, value),
-        );
+    final events = RawReceivePort((Object? message) {
+      // null: the next open checks that this isolate is alive.
+      if (message == null) return;
+      final m = message as List<Object?>;
+      engine._onNotify(m[0]! as int, m[1]! as int, m[2]! as int);
+    }, 'telosnex_audio events');
     final dir = spillDir ?? '${Directory.systemTemp.path}/telosnex_audio';
     final config = calloc<TsnxEngineConfig>();
     final out = calloc<Pointer<TsnxEngine>>();
@@ -90,7 +112,8 @@ final class _NativeEngine implements AudioEngine {
         ..auto_gain = processing.autoGain ? 1 : 0
         ..clock_correction = processing.clockCorrection.index
         ..spill_dir = dirPtr
-        ..notify = listener.nativeFunction;
+        ..notify_port = events.sendPort.nativePort
+        ..post_cobject = NativeApi.postCObject.cast();
       switch (device) {
         case ManualDevice(:final channels, :final delay):
           ref
@@ -104,7 +127,7 @@ final class _NativeEngine implements AudioEngine {
       }
       final rc = tsnxEngineOpen(config, out);
       if (rc != 0) {
-        listener.close();
+        events.close();
         if (rc == -8) {
           throw UnsupportedError(
             'telosnex_audio platform audio needs Android 8 (API 26) or later',
@@ -114,7 +137,7 @@ final class _NativeEngine implements AudioEngine {
       }
       engine = _NativeEngine._(
         out.value,
-        listener,
+        events,
         device is ManualDevice ? device : null,
       );
       return engine;
@@ -127,7 +150,7 @@ final class _NativeEngine implements AudioEngine {
   }
 
   final Pointer<TsnxEngine> _e;
-  final NativeCallable<Void Function(Int32, Int32, Int64)> _listener;
+  final RawReceivePort _events;
   final ManualDevice? _manual;
   final Map<int, _NativeTrack> _tracks = {};
   final Map<int, Completer<void>> _requests = {};
@@ -445,7 +468,7 @@ final class _NativeEngine implements AudioEngine {
     }
     _tracks.clear();
     tsnxEngineClose(_e);
-    _listener.close();
+    _events.close();
     for (final c in _requests.values) {
       c.completeError(StateError('AudioEngine closed'));
     }
