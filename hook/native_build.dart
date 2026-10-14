@@ -13,6 +13,8 @@
 //         native_build: auto | download | source   # default auto
 //         build_type: Release | RelWithDebInfo | Debug   # default Release;
 //                                                        # needs source
+//         android_ndk_home: <path>   # NDK for an Android source build when
+//                                    # the Flutter tool gives no compiler
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
@@ -109,7 +111,9 @@ Future<void> _publishSourceBuild(
   await lib.copy(out.path);
   // Release files have no debug symbols. Strip only the published copy, so
   // the incremental build folder stays valid.
-  if (source.release != null) await _strip(out, os);
+  if (source.release != null) {
+    await _strip(out, os, ndk: os == OS.android ? _androidNdk(input) : null);
+  }
   output.assets.code.add(
     CodeAsset(
       package: packageName,
@@ -120,15 +124,19 @@ Future<void> _publishSourceBuild(
   );
 }
 
-Future<void> _strip(File library, OS os) async {
+Future<void> _strip(File library, OS os, {String? ndk}) async {
   switch (os) {
     case OS.macOS || OS.iOS:
       await _run('strip', ['-x', library.path]);
     case OS.linux:
       await _run('strip', ['--strip-unneeded', library.path]);
+    case OS.android:
+      await _run(_androidLlvmTool(ndk!, 'llvm-strip'), [
+        '--strip-unneeded',
+        library.path,
+      ]);
     default:
-      // MSVC Release DLLs keep their symbols in a separate PDB. Android
-      // releases are not built yet.
+      // MSVC Release DLLs keep their symbols in a separate PDB.
       break;
   }
 }
@@ -177,7 +185,7 @@ Future<File> _buildFromSource(
       '-DCMAKE_OSX_DEPLOYMENT_TARGET=${code.iOS.targetVersion}',
     ],
     if (os == OS.android) ...[
-      '-DCMAKE_TOOLCHAIN_FILE=${_androidNdk(code)}/build/cmake/android.toolchain.cmake',
+      '-DCMAKE_TOOLCHAIN_FILE=${_androidNdk(input)}/build/cmake/android.toolchain.cmake',
       '-DANDROID_ABI=${androidAbi(arch)}',
       '-DANDROID_PLATFORM=android-${code.android.targetNdkApi}',
       '-DANDROID_STL=c++_static',
@@ -213,18 +221,41 @@ Future<File> _buildFromSource(
   return File('${buildDir.path}/$libName');
 }
 
-/// The NDK root, from the clang the Flutter tool gives
-/// (`<ndk>/toolchains/llvm/prebuilt/<host>/bin/clang`).
-String _androidNdk(CodeConfig code) {
-  final cc = code.cCompiler?.compiler.toFilePath();
-  if (cc == null) {
-    throw StateError('telosnex_audio needs the Android NDK to build.');
+/// The NDK root. A Flutter build gives its clang
+/// (`<ndk>/toolchains/llvm/prebuilt/<host>/bin/clang`). `native_prebuilt:build`
+/// gives no compiler, so then the `android_ndk_home` user define or the
+/// environment names the NDK.
+String _androidNdk(BuildInput input) {
+  final cc = input.config.code.cCompiler?.compiler.toFilePath();
+  if (cc != null) {
+    var dir = File(cc).parent;
+    for (var i = 0; i < 5; i++) {
+      dir = dir.parent;
+    }
+    return dir.path;
   }
-  var dir = File(cc).parent;
-  for (var i = 0; i < 5; i++) {
-    dir = dir.parent;
+  final env = Platform.environment;
+  final ndk =
+      input.userDefines.path('android_ndk_home')?.toFilePath() ??
+      env['ANDROID_NDK_HOME'] ??
+      env['ANDROID_NDK_ROOT'];
+  if (ndk == null || !File('$ndk/source.properties').existsSync()) {
+    throw StateError(
+      'telosnex_audio needs the Android NDK to build. Set the '
+      'android_ndk_home user define or ANDROID_NDK_HOME to the NDK directory.',
+    );
   }
-  return dir.path;
+  return ndk;
+}
+
+/// An LLVM tool of the NDK at [ndk], such as `llvm-strip`.
+String _androidLlvmTool(String ndk, String name) {
+  final prebuilt = Directory('$ndk/toolchains/llvm/prebuilt');
+  for (final host in prebuilt.listSync().whereType<Directory>()) {
+    final exe = '${host.path}/bin/$name${Platform.isWindows ? '.exe' : ''}';
+    if (File(exe).existsSync()) return exe;
+  }
+  throw StateError('The NDK at $ndk has no $name.');
 }
 
 /// The C and C++ compilers for Linux: the Flutter tool's clang when it gives

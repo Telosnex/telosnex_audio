@@ -17,7 +17,10 @@ Hardware gates remain open as listed below.
   auto | download | source. Release: `git push -f origin HEAD:native-release`
   (`native-release-dry` builds only), then merge the native-manifest/<tag> branch.
   Current release native-b3dcd92de937268a, six desktop targets, glibc <= 2.34,
-  immutable releases on. iOS and Android build from source.
+  immutable releases on. 2026-10-14: release workflow adds iOS (iphoneos, arm64 and x64
+  simulators, iOS 13) and Android (arm, arm64, x64, API 24, NDK 28.2, stripped, 16 KB
+  pages checked). The hook finds the NDK from android_ndk_home or ANDROID_NDK_HOME when
+  the Flutter tool gives no compiler. All five built locally with native_prebuilt:build.
 
 ## Status
 - Step 1: freeze note added to telosnex lib/features/mic/docs/WEBRTC_MAINTENANCE.md (uncommitted).

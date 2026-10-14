@@ -6,8 +6,9 @@
 # native-manifest/<tag> with native_artifacts/prebuilt.json. Merge that
 # branch to use the release.
 #
-# Targets are the ones of the old release.yml. iOS and Android come later
-# (ADR workplan step 8); until then those targets build from source.
+# Every target the hook supports has prebuilt files: desktop, iOS (device and
+# both simulators, iOS 13, the version Flutter gives hooks) and Android (API
+# 24, the minSdk of the plugin).
 name: native release
 run-name: Native release / ${{ (github.ref_name == 'native-release-dry' || inputs.dry_run) && 'build only' || 'publish' }}
 
@@ -35,6 +36,10 @@ defaults:
 env:
   FLUTTER_VERSION: '3.47.1'
   FLUTTER_SUPPRESS_ANALYTICS: 'true'
+  NDK_VERSION: 28.2.13676358
+  IOS_VERSION: 13
+  MACOS_VERSION: 12
+  ANDROID_API: 24
 
 jobs:
   build:
@@ -53,6 +58,12 @@ jobs:
           - { target: macos-x64, runner: macos-15 }
           - { target: windows-x64, runner: windows-2025-vs2026 }
           - { target: windows-arm64, runner: windows-11-arm }
+          - { target: ios-arm64-iphoneos, runner: macos-15 }
+          - { target: ios-arm64-iphonesimulator, runner: macos-15 }
+          - { target: ios-x64-iphonesimulator, runner: macos-15 }
+          - { target: android-arm, runner: ubuntu-22.04 }
+          - { target: android-arm64, runner: ubuntu-22.04 }
+          - { target: android-x64, runner: ubuntu-22.04 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -81,6 +92,15 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q cmake ninja-build g++ libasound2-dev libpulse-dev
 
+      - name: Install the Android NDK
+        if: startsWith(matrix.target, 'android-')
+        run: |
+          { yes || true; } | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "ndk;$NDK_VERSION" > /dev/null
+          ndk="$ANDROID_HOME/ndk/$NDK_VERSION"
+          test -f "$ndk/source.properties"
+          echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+
       - name: Describe the toolchain
         id: toolchain
         run: |
@@ -88,7 +108,8 @@ jobs:
             windows-*)
               vs="$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -property catalog_productDisplayVersion || true)"
               t="MSVC, Visual Studio ${vs:-unknown}" ;;
-            macos-*) t="$(xcodebuild -version | sed -n 1p)" ;;
+            android-*) t="Android NDK $NDK_VERSION, $(cmake --version | sed -n 1p)" ;;
+            macos-*|ios-*) t="$(xcodebuild -version | sed -n 1p)" ;;
             linux-*) t="$(gcc --version | sed -n 1p)" ;;
           esac
           echo "Toolchain: $t"
@@ -121,22 +142,39 @@ jobs:
         env:
           TOOLCHAIN: ${{ steps.toolchain.outputs.value }}
         run: |
+          defines=()
+          case "${{ matrix.target }}" in
+            android-*) defines+=(--define "android_ndk_home=$ANDROID_NDK_HOME") ;;
+          esac
           dart run native_prebuilt:build \
             --target "${{ matrix.target }}" \
             --out "$OUT/out/${{ matrix.target }}" \
             --runner "${{ matrix.runner }}" \
-            --toolchain "$TOOLCHAIN"
+            --toolchain "$TOOLCHAIN" \
+            --ios-version "$IOS_VERSION" \
+            --macos-version "$MACOS_VERSION" \
+            --android-api "$ANDROID_API" \
+            "${defines[@]}"
           cat "$OUT/out/${{ matrix.target }}/target.json"
 
       - *clean
 
       - name: Check the glibc requirement (Linux)
-        if: runner.os == 'Linux'
+        if: startsWith(matrix.target, 'linux-')
         run: |
           lib="$OUT/out/${{ matrix.target }}/libtelosnex_audio.so"
           newest="$(objdump -T "$lib" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
           echo "Newest glibc requirement: $newest"
           test "$(printf '%s\n' GLIBC_2.35 "$newest" | sort -V | tail -1)" = GLIBC_2.35
+
+      # Android 15 devices can use 16 KB pages (Google Play requirement).
+      - name: Check the page alignment (Android 64-bit)
+        if: matrix.target == 'android-arm64' || matrix.target == 'android-x64'
+        run: |
+          readelf="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          lib="$OUT/out/${{ matrix.target }}/libtelosnex_audio.so"
+          "$readelf" -lW "$lib" | awk '$1 == "LOAD" { print $NF }' | tee /dev/stderr \
+            | grep -qv '^0x4000$' && { echo "::error::A LOAD segment is not 16 KB aligned."; exit 1; } || true
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
