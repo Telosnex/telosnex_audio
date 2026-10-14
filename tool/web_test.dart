@@ -22,6 +22,8 @@ Future<void> main(List<String> args) async {
   }
   Directory.current = File.fromUri(Platform.script).parent.parent.path;
 
+  // `dart run` cannot resolve the Flutter SDK dependency by itself.
+  await _run('flutter', ['pub', 'get']);
   await _run('dart', [
     'run',
     'native_prebuilt:web',

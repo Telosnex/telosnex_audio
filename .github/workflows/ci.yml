@@ -336,7 +336,4 @@ jobs:
       # Engine cases in Chrome (wasm core, storage worker, ?v= on every file),
       # then the real-time AudioWorklet check (ADR step 9 gate), JS and Wasm.
       - name: Web tests
-        run: |
-          set -euo pipefail
-          flutter pub get
-          dart tool/web_test.dart --from "$RUNNER_TEMP/web"
+        run: dart tool/web_test.dart --from "$RUNNER_TEMP/web"
