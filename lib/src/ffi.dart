@@ -1,5 +1,5 @@
 // Bindings to the C API in src/tsnx_audio.h. The code asset id is this
-// library's URI (see lib/src/hook/native_build.dart).
+// library's URI (see hook/native_build.dart).
 // ignore_for_file: non_constant_identifier_names
 import 'dart:ffi';
 

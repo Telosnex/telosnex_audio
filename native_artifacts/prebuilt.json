@@ -1,0 +1,93 @@
+{
+  "schema": 1,
+  "sourceKey": "b3dcd92de937268af52d4b5a2191b3c1d1259d531c186f53766cc3fa1d32d018",
+  "release": "https://github.com/Telosnex/telosnex_audio/releases/tag/native-b3dcd92de937268a",
+  "targets": {
+    "linux-arm64": {
+      "runner": "ubuntu-22.04-arm",
+      "toolchain": "gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+      "files": [
+        {
+          "name": "libtelosnex_audio.so",
+          "sha256": "f06e6d3fadaaba1cc2f603be6a7c40ef8d9de53f5c20614b01ee3642ea1853d9",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-b3dcd92de937268a/linux-arm64-libtelosnex_audio.so.gz",
+          "downloadSha256": "67c6669ff3bdd86c247595e5b1cd7d72625d56df2dc7519232f3a3064015df92",
+          "delivery": "bundle",
+          "asset": "src/ffi.dart"
+        }
+      ]
+    },
+    "linux-x64": {
+      "runner": "ubuntu-22.04",
+      "toolchain": "gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+      "files": [
+        {
+          "name": "libtelosnex_audio.so",
+          "sha256": "b2b13fae8042ef24f6303c72a5f3bb5599484dca1a80ddb876dd9d3a6e9bd875",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-b3dcd92de937268a/linux-x64-libtelosnex_audio.so.gz",
+          "downloadSha256": "4c7f76e822d5368b37d7323021c14623eea896b3b48a0e861b01ec4cc2ebada6",
+          "delivery": "bundle",
+          "asset": "src/ffi.dart"
+        }
+      ]
+    },
+    "macos-arm64": {
+      "runner": "macos-15",
+      "toolchain": "Xcode 16.4",
+      "minOSVersion": 12,
+      "files": [
+        {
+          "name": "libtelosnex_audio.dylib",
+          "sha256": "623932ca87997a5c9341c3678bbb40b40989dd2759723cf600b99677acd92ea4",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-b3dcd92de937268a/macos-arm64-libtelosnex_audio.dylib.gz",
+          "downloadSha256": "6600e51d36bc26babdcb66765a1687d894512e6a274e69b02d7f26ef32f3acff",
+          "delivery": "bundle",
+          "asset": "src/ffi.dart"
+        }
+      ]
+    },
+    "macos-x64": {
+      "runner": "macos-15",
+      "toolchain": "Xcode 16.4",
+      "minOSVersion": 12,
+      "files": [
+        {
+          "name": "libtelosnex_audio.dylib",
+          "sha256": "a26ec03b1d55acb09583e79ca6cc58cc094f89162607c8b8ddf8546aca71d290",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-b3dcd92de937268a/macos-x64-libtelosnex_audio.dylib.gz",
+          "downloadSha256": "8639e331122a355f76f57ca47948d75e87c43b39908d0284a5950196f8bb58cd",
+          "delivery": "bundle",
+          "asset": "src/ffi.dart"
+        }
+      ]
+    },
+    "windows-arm64": {
+      "runner": "windows-11-arm",
+      "toolchain": "MSVC, Visual Studio 18.10.3",
+      "files": [
+        {
+          "name": "telosnex_audio.dll",
+          "sha256": "2dd46cf10042eb230761748051dbd6fee381a700c08e8e9b4e714797fd59ffbb",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-b3dcd92de937268a/windows-arm64-telosnex_audio.dll.gz",
+          "downloadSha256": "d140ed2234a4f8ca7f99326ca802001103d019e2f732f0f68580318d0332927d",
+          "delivery": "bundle",
+          "asset": "src/ffi.dart"
+        }
+      ]
+    },
+    "windows-x64": {
+      "runner": "windows-2025-vs2026",
+      "toolchain": "MSVC, Visual Studio 18.10.2",
+      "files": [
+        {
+          "name": "telosnex_audio.dll",
+          "sha256": "56926e9f34c4f3a875eee03ea15c70a0e2737a36d76a0f533e557d6566bc5965",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-b3dcd92de937268a/windows-x64-telosnex_audio.dll.gz",
+          "downloadSha256": "b243db2315d229bee81ba23fa98e09999ffb06fef32fbc398197b4938f5a2ac3",
+          "delivery": "bundle",
+          "asset": "src/ffi.dart"
+        }
+      ]
+    }
+  }
+}

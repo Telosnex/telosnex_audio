@@ -1,5 +1,7 @@
-# Native sources are hashed byte for byte to match prebuilt releases
-# (lib/src/hook/native_build.dart). Never convert line endings.
+# Same bytes on every host, so the native_prebuilt source key matches
+# (native_prebuilt ADR 001 D3).
+* text=auto eol=lf
+# Vendored native sources: never convert line endings.
 CMakeLists.txt -text
 cmake/** -text
 src/** -text

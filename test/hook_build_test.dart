@@ -1,6 +1,7 @@
 import 'package:code_assets/code_assets.dart';
 import 'package:test/test.dart';
-import 'package:telosnex_audio/src/hook/native_build.dart';
+
+import '../hook/native_build.dart';
 
 void main() {
   test(
@@ -21,5 +22,12 @@ void main() {
     }
     expect(isSupportedTarget(OS.android, Architecture.ia32), isFalse);
     expect(() => androidAbi(Architecture.ia32), throwsUnsupportedError);
+  });
+
+  test('MSVC cross toolsets are named host_target', () {
+    expect(vcvarsArch(Architecture.x64, Architecture.x64), 'x64');
+    expect(vcvarsArch(Architecture.arm64, Architecture.arm64), 'arm64');
+    expect(vcvarsArch(Architecture.x64, Architecture.arm64), 'x64_arm64');
+    expect(vcvarsArch(Architecture.arm64, Architecture.x64), 'arm64_x64');
   });
 }
