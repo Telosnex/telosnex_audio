@@ -12,6 +12,12 @@ Hardware gates remain open as listed below.
 - Fork clock correction: ~/dev/libwebrtc branch telosnex/m144-pcm-playout, src/internal/{drift_servo,hardware_clock_estimator,capture_clock_policy,audio_clock_correction}.
 - macOS fork ADM = AudioEngineDevice (AVAudioEngine, Apple voice processing).
 - Shell for cli tool is sh: no process substitution.
+- Prebuilt libraries (2026-10-14, PR #4, b383d11): package:native_prebuilt. Hook in
+  hook/native_build.dart (counts in the source key). User define native_build:
+  auto | download | source. Release: `git push -f origin HEAD:native-release`
+  (`native-release-dry` builds only), then merge the native-manifest/<tag> branch.
+  Current release native-b3dcd92de937268a, six desktop targets, glibc <= 2.34,
+  immutable releases on. iOS and Android build from source.
 
 ## Status
 - Step 1: freeze note added to telosnex lib/features/mic/docs/WEBRTC_MAINTENANCE.md (uncommitted).
