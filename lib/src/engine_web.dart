@@ -16,19 +16,27 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:math' as math;
 import 'dart:typed_data';
-import 'dart:ui_web' as ui_web;
 
 import 'package:web/web.dart' as web;
 
 import 'types.dart';
+import 'web_runtime.g.dart';
 
-// Flutter assets in an app. `flutter test --platform chrome` has no asset
-// bundle but serves package:telosnex_audio/ at /packages/telosnex_audio/.
-String _assetUrl(String file) => _assetBase == null
-    ? ui_web.assetManager.getAssetUrl('packages/telosnex_audio/lib/web/$file')
-    : '$_assetBase/$file';
-String? _assetBase;
+/// The URL of a web runtime file, relative to the document base URI.
+///
+/// In an app, the build hook installs the files in
+/// web/native_prebuilt/telosnex_audio/ (native_prebuilt ADR 002 D1, D8).
+/// `flutter test --platform chrome` runs no web hook but serves
+/// package:telosnex_audio/ at packages/telosnex_audio/, and
+/// `native_prebuilt:web install-dev` puts the files in lib/web/. Each URL has
+/// the query `v=<webRuntimeVersion>`, so a browser does not use a cached file
+/// of another version (ADR 002 D7).
+String webRuntimeUrl(String file, {bool test = false}) =>
+    '${test ? _testAssetBase : _appAssetBase}/$file?v=$webRuntimeVersion';
+const _appAssetBase = 'native_prebuilt/telosnex_audio';
 const _testAssetBase = 'packages/telosnex_audio/web';
+bool _testAssets = false;
+String _assetUrl(String file) => webRuntimeUrl(file, test: _testAssets);
 
 bool get engineSupported =>
     globalContext.has('AudioWorkletNode') && globalContext.has('WebAssembly');
@@ -166,8 +174,8 @@ final class _WebEngine implements AudioEngine {
     var wasmResponse = await web.window
         .fetch(_assetUrl('telosnex_audio.wasm').toJS)
         .toDart;
-    if (wasmResponse.status == 404 && _assetBase == null) {
-      _assetBase = _testAssetBase;
+    if (wasmResponse.status == 404 && !_testAssets) {
+      _testAssets = true;
       wasmResponse = await web.window
           .fetch(_assetUrl('telosnex_audio.wasm').toJS)
           .toDart;

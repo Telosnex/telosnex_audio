@@ -1,7 +1,13 @@
 # Files that the native build does not read (native_prebuilt ADR 001 D3). The
 # hook reads hook/, CMakeLists.txt, cmake/, src/, third_party/ and
-# pubspec.yaml.
+# pubspec.yaml. The web build, tool/build_web.dart, is a source input too
+# (native_prebuilt ADR 002 D5).
 analysis_options.yaml
 android/
+native_artifacts/README.md
 native_test/
-tool/
+tool/licenses.dart
+tool/vendor.dart
+tool/vendor_manifest.json
+tool/web_check.dart
+tool/web_test.dart

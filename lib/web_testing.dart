@@ -9,4 +9,5 @@ export 'src/web_testing_stub.dart'
         debugIdle,
         debugResume,
         debugSetOutputDelay,
-        debugTapOutput;
+        debugTapOutput,
+        webRuntimeUrl;
