@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "webVersion": "1461d4ee9cff3e6f",
+  "files": [
+    {
+      "name": "telosnex_audio_storage.js",
+      "sha256": "f798cdf42ac64e2037ac945c2804457cb069203c374d12b35a690422dc8c4b7f",
+      "bytes": 6528,
+      "source": "lib/web/telosnex_audio_storage.js"
+    },
+    {
+      "name": "telosnex_audio_worklet.js",
+      "sha256": "df9e1ec16e34267e8103cd7774899faabfba973a2f54afefa52f540c8a9afd27",
+      "bytes": 11129,
+      "source": "lib/web/telosnex_audio_worklet.js"
+    }
+  ]
+}

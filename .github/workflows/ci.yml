@@ -3,7 +3,8 @@ name: CI
 # Native tests (macOS: plain, ThreadSanitizer, and an x86_64 compile; Linux
 # x64 and arm64; Windows x64 and an arm64 compile), Dart API tests through
 # the native-assets hook, end-to-end example app builds, and the web engine
-# (wasm core tests in Chrome and the real-time AudioWorklet check).
+# (wasm core tests in Chrome and the real-time AudioWorklet check, on a wasm
+# built from these sources in the image of the release workflow).
 on:
   push:
     branches: [main]
@@ -174,6 +175,16 @@ jobs:
           dart tool/licenses.dart --check
           dart analyze --fatal-infos
 
+      # web.json pins the hand-written web files (native_prebuilt ADR 002 D6).
+      - name: The hand-written web files match web.json
+        run: |
+          set -euo pipefail
+          dart run native_prebuilt:web stamp
+          git diff --exit-code native_artifacts/web.json lib/src/web_runtime.g.dart || {
+            echo "::error::Run: dart run native_prebuilt:web stamp"
+            exit 1
+          }
+
       - name: Dart API tests (builds the native asset)
         run: flutter test test/engine_test.dart test/licenses_test.dart test/hook_build_test.dart
 
@@ -265,8 +276,40 @@ jobs:
           grep -q 'lib/arm64-v8a/libtelosnex_audio.so' /tmp/apk.txt
           grep -q 'lib/x86_64/libtelosnex_audio.so' /tmp/apk.txt
 
+  web-build:
+    name: Web engine / build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      # emscripten/emsdk:5.0.0, as in native_release.yml.
+      image: emscripten/emsdk@sha256:67df07bc59f86685818fa801d340b54e576fe4276cfd3bcfc4da61d564217737
+    steps:
+      - name: Install unzip
+        run: |
+          command -v unzip > /dev/null || {
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends unzip > /dev/null
+          }
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+        with:
+          sdk: 3.13.1
+      - name: Build telosnex_audio.wasm
+        run: dart tool/build_web.dart --out "$RUNNER_TEMP/web"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: web
+          path: ${{ runner.temp }}/web/
+          if-no-files-found: error
+          retention-days: 7
+
   web:
     name: Web engine / Chrome
+    needs: web-build
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -285,19 +328,15 @@ jobs:
           cache: 'false'
           pub-cache: 'false'
 
-      - name: The committed wasm matches its sources
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: web
+          path: ${{ runner.temp }}/web
+
+      # Engine cases in Chrome (wasm core, storage worker, ?v= on every file),
+      # then the real-time AudioWorklet check (ADR step 9 gate), JS and Wasm.
+      - name: Web tests
         run: |
           set -euo pipefail
           flutter pub get
-          dart tool/build_wasm.dart --check
-
-      - name: Engine cases in Chrome (wasm core, storage worker)
-        run: flutter test --platform chrome test/web_engine_test.dart
-
-      - name: Real-time AudioWorklet check (ADR step 9 gate)
-        run: |
-          set -euo pipefail
-          (cd example && flutter pub get && flutter build web -t lib/web_check.dart)
-          dart tool/web_check.dart --browser chrome
-          (cd example && flutter build web --wasm -t lib/web_check.dart)
-          dart tool/web_check.dart --browser chrome
+          dart tool/web_test.dart --from "$RUNNER_TEMP/web"

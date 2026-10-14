@@ -89,6 +89,10 @@ Hardware gates remain open as listed below.
 Design:
 - One wasm module (src/web/web_core.cc + Track, TrackStore, Sonic, SincResampler, minimp3), standalone, no Emscripten JS.
   Built by tool/build_wasm.dart; committed under assets/web/ (hooks do not run on web).
+  2026-10-14: native_prebuilt ADR 002. tool/build_web.dart builds it in the release workflow (emsdk 5.0.0
+  image by digest); the GitHub release holds it and web.json pins it. The hook installs the three files in
+  web/native_prebuilt/telosnex_audio/ of the app; every URL has ?v=<webRuntimeVersion>. Not in git or
+  flutter.assets. Tests: dart tool/web_test.dart [--from <build_web output>].
 - assets/web/telosnex_audio_worklet.js: TsnxCore (wasm wrapper, message protocol) + processors 'telosnex-audio'
   (engine: 1 mic input, stereo output, 480-frame FIFO over 128-frame quanta) and 'telosnex-tap' (test).
   The same file loads as a classic script on the main thread for ManualDevice (tests).

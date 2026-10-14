@@ -19,3 +19,5 @@ String debugContextState(AudioEngine engine) =>
 Future<void> debugResume(AudioEngine engine) =>
     throw UnsupportedError('web only');
 void debugIdle(AudioEngine engine) => throw UnsupportedError('web only');
+String webRuntimeUrl(String file, {bool test = false}) =>
+    throw UnsupportedError('web only');
