@@ -1,0 +1,7 @@
+# Files that the native build does not read (native_prebuilt ADR 001 D3). The
+# hook reads hook/, CMakeLists.txt, cmake/, src/, third_party/ and
+# pubspec.yaml.
+analysis_options.yaml
+android/
+native_test/
+tool/

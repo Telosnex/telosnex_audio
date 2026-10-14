@@ -1,22 +1,23 @@
 // Native build for the telosnex_audio code asset (ADR D2).
 //
-// Default: build from source with CMake into a build folder that persists in
+// package:native_prebuilt (native_prebuilt
+// docs/ADR_001_PREBUILT_NATIVE_LIBRARIES.md) chooses between the prebuilt
+// files in native_artifacts/prebuilt.json and a source build. The source
+// build uses CMake with a build folder that persists in
 // `outputDirectoryShared`, so a one-file edit recompiles one file (R1).
-// A prebuilt from a GitHub release is used when its source hash matches.
 //
 // User defines (in the app's pubspec.yaml):
 //   hooks:
 //     user_defines:
 //       telosnex_audio:
-//         native: auto | source | prebuilt   # default auto
-//         build_type: Release | RelWithDebInfo | Debug   # default Release
+//         native_build: auto | download | source   # default auto
+//         build_type: Release | RelWithDebInfo | Debug   # default Release;
+//                                                        # needs source
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
-import 'package:crypto/crypto.dart';
 import 'package:hooks/hooks.dart';
-
-import 'prebuilt.g.dart';
+import 'package:native_prebuilt/native_prebuilt.dart';
 
 const packageName = 'telosnex_audio';
 const assetName = 'src/ffi.dart';
@@ -39,54 +40,76 @@ String androidAbi(Architecture arch) => switch (arch) {
   _ => throw UnsupportedError('Unsupported Android architecture: $arch'),
 };
 
+/// The `vcvarsall.bat` argument for a build on [host] for [target]:
+/// `x64`, `arm64`, or a cross pair such as `x64_arm64`.
+String vcvarsArch(Architecture host, Architecture target) {
+  String name(Architecture a) => switch (a) {
+    Architecture.x64 => 'x64',
+    Architecture.arm64 => 'arm64',
+    _ => throw UnsupportedError('No MSVC toolset for $a'),
+  };
+  return host == target ? name(target) : '${name(host)}_${name(target)}';
+}
+
 Future<void> buildNative(BuildInput input, BuildOutputBuilder output) async {
   if (!input.config.buildCodeAssets) return;
   final code = input.config.code;
+  if (!isSupportedTarget(code.targetOS, code.targetArchitecture)) return;
+
+  final buildType = (input.userDefines['build_type'] as String?) ?? 'Release';
+  if (buildType != 'Release' && input.userDefines['native_build'] != 'source') {
+    throw StateError(
+      'telosnex_audio: build_type $buildType needs native_build: source. '
+      'Prebuilt files are Release builds.',
+    );
+  }
+  await NativePrebuilt(
+    input: input,
+    output: output,
+    log: (message) => stderr.writeln('[telosnex_audio] $message'),
+  ).run((source) => _publishSourceBuild(input, output, source, buildType));
+}
+
+Future<void> _publishSourceBuild(
+  BuildInput input,
+  BuildOutputBuilder output,
+  SourceBuild source,
+  String buildType,
+) async {
+  final code = input.config.code;
   final os = code.targetOS;
   final arch = code.targetArchitecture;
-  final root = Directory.fromUri(input.packageRoot);
-  final sources = nativeSourceFiles(root);
-  output.dependencies.addAll(sources.map((f) => f.uri));
-  if (!isSupportedTarget(os, arch)) return;
-
-  final mode = (input.userDefines['native'] as String?) ?? 'auto';
-  final buildType = (input.userDefines['build_type'] as String?) ?? 'Release';
   final libName = os.dylibFileName('telosnex_audio');
   final simulator =
       os == OS.iOS && code.iOS.targetSdk == IOSSdk.iPhoneSimulator;
   final target = '${simulator ? 'iossim' : os.name}-${arch.name}';
 
   // A desktop target on another host OS (flutterpi_tool builds Linux arm64
-  // on macOS) has no compiler and sysroot here: use the prebuilt.
-  final cross = os != OS.current && os != OS.iOS && os != OS.android;
-  if (cross && mode == 'source') {
+  // on macOS) has no compiler and sysroot here.
+  if (os != OS.current && os != OS.iOS && os != OS.android) {
     throw StateError(
-      'telosnex_audio cannot build $target from source on ${OS.current.name}. '
-      'Build on a $target host, or use a prebuilt.',
+      'telosnex_audio cannot build $target from source on '
+      '${OS.current.name}, and prebuilt files were not used because '
+      '${source.reason}. Build on a $target host, or run the native release '
+      'workflow of telosnex_audio for these sources.',
     );
   }
 
-  File? lib;
-  if (mode != 'source') {
-    lib = await _tryPrebuilt(input, target, libName, sources, root);
-    if (lib == null && (mode == 'prebuilt' || cross)) {
-      throw StateError(
-        'No prebuilt telosnex_audio for $target at this source hash.',
-      );
-    }
-  }
-  lib ??= await _buildFromSource(
+  final lib = await _buildFromSource(
     input,
-    root,
+    Directory.fromUri(input.packageRoot),
     os,
     arch,
     buildType,
     libName,
     target,
   );
-
   final out = File.fromUri(input.outputDirectory.resolve(libName));
+  await Directory.fromUri(input.outputDirectory).create(recursive: true);
   await lib.copy(out.path);
+  // Release files have no debug symbols. Strip only the published copy, so
+  // the incremental build folder stays valid.
+  if (source.release != null) await _strip(out, os);
   output.assets.code.add(
     CodeAsset(
       package: packageName,
@@ -97,91 +120,16 @@ Future<void> buildNative(BuildInput input, BuildOutputBuilder output) async {
   );
 }
 
-/// Every file that affects the native build, in a stable order.
-List<File> nativeSourceFiles(Directory root) {
-  final files = <File>[File('${root.path}/CMakeLists.txt')];
-  for (final dir in ['cmake', 'src', 'third_party']) {
-    final d = Directory('${root.path}/$dir');
-    if (!d.existsSync()) continue;
-    files.addAll(
-      d
-          .listSync(recursive: true)
-          .whereType<File>()
-          .where((f) => !f.path.endsWith('.DS_Store')),
-    );
-  }
-  files.sort((a, b) => a.path.compareTo(b.path));
-  return files;
-}
-
-/// SHA-256 over relative paths and contents of [nativeSourceFiles].
-String nativeSourceHash(Directory root, List<File> files) {
-  final sink = _DigestSink();
-  final input = sha256.startChunkedConversion(sink);
-  final prefix = root.absolute.path.length + 1;
-  for (final f in files) {
-    input.add(
-      f.absolute.path.substring(prefix).replaceAll(r'\', '/').codeUnits,
-    );
-    input.add([0]);
-    input.add(f.readAsBytesSync());
-    input.add([0]);
-  }
-  input.close();
-  return sink.value.toString();
-}
-
-class _DigestSink implements Sink<Digest> {
-  late Digest value;
-  @override
-  void add(Digest data) => value = data;
-  @override
-  void close() {}
-}
-
-Future<File?> _tryPrebuilt(
-  BuildInput input,
-  String target,
-  String libName,
-  List<File> sources,
-  Directory root,
-) async {
-  final tag = prebuiltReleaseTag;
-  final expected = prebuiltSha256['$target/$libName'];
-  if (tag == null || expected == null) return null;
-  if (nativeSourceHash(root, sources) != prebuiltSourceHash) return null;
-  final dir = Directory.fromUri(
-    input.outputDirectoryShared.resolve(
-      'prebuilt-${expected.substring(0, 12)}/',
-    ),
-  );
-  final file = File('${dir.path}/$libName');
-  if (file.existsSync() &&
-      sha256.convert(file.readAsBytesSync()).toString() == expected) {
-    return file;
-  }
-  dir.createSync(recursive: true);
-  final url = Uri.parse(
-    'https://github.com/Telosnex/telosnex_audio/releases/download/$tag/$target-$libName',
-  );
-  final client = HttpClient();
-  try {
-    final req = await client.getUrl(url);
-    final res = await req.close();
-    if (res.statusCode != 200) return null;
-    final bytes = <int>[];
-    await for (final chunk in res) {
-      bytes.addAll(chunk);
-    }
-    if (sha256.convert(bytes).toString() != expected) {
-      throw StateError('Prebuilt $url has the wrong SHA-256.');
-    }
-    await file.writeAsBytes(bytes, flush: true);
-    return file;
-  } on SocketException {
-    return null;
-  } finally {
-    client.close();
+Future<void> _strip(File library, OS os) async {
+  switch (os) {
+    case OS.macOS || OS.iOS:
+      await _run('strip', ['-x', library.path]);
+    case OS.linux:
+      await _run('strip', ['--strip-unneeded', library.path]);
+    default:
+      // MSVC Release DLLs keep their symbols in a separate PDB. Android
+      // releases are not built yet.
+      break;
   }
 }
 
@@ -196,7 +144,7 @@ Future<File> _buildFromSource(
 ) async {
   final code = input.config.code;
   // Windows: CMake, Ninja, and cl.exe come from the Visual Studio developer
-  // environment that the Flutter tool found.
+  // environment.
   final env = os == OS.windows ? await _msvcEnvironment(code, arch) : null;
   final cmake = _findTool('cmake', env);
   if (cmake == null) {
@@ -295,28 +243,27 @@ String _androidNdk(CodeConfig code) {
 }
 
 /// Runs the Visual Studio developer prompt script and returns its
-/// environment.
+/// environment. The Flutter tool gives the script. `native_prebuilt:build`
+/// does not, so then vswhere finds `vcvarsall.bat`.
 Future<Map<String, String>> _msvcEnvironment(
   CodeConfig code,
   Architecture arch,
 ) async {
   final prompt = code.cCompiler?.windows.developerCommandPrompt;
-  if (prompt == null) {
-    throw StateError(
-      'telosnex_audio needs the Visual Studio C++ build tools on Windows.',
-    );
+  final String script;
+  final List<String> arguments;
+  if (prompt != null) {
+    script = prompt.script.toFilePath();
+    arguments = prompt.arguments;
+  } else {
+    script = await _vcvarsall();
+    arguments = [vcvarsArch(Architecture.current, arch)];
   }
-  final r = await Process.run('cmd', [
-    '/c',
-    prompt.script.toFilePath(),
-    ...prompt.arguments,
-    '&&',
-    'set',
-  ]);
+  final r = await Process.run('cmd', ['/c', script, ...arguments, '&&', 'set']);
   if (r.exitCode != 0) {
     throw ProcessException(
-      prompt.script.toFilePath(),
-      prompt.arguments,
+      script,
+      arguments,
       '${r.stdout}\n${r.stderr}',
       r.exitCode,
     );
@@ -327,6 +274,30 @@ Future<Map<String, String>> _msvcEnvironment(
     if (eq > 0) env[line.substring(0, eq)] = line.substring(eq + 1);
   }
   return env;
+}
+
+Future<String> _vcvarsall() async {
+  final programFiles =
+      Platform.environment['ProgramFiles(x86)'] ?? r'C:\Program Files (x86)';
+  final vswhere =
+      '$programFiles\\Microsoft Visual Studio\\Installer\\vswhere.exe';
+  if (File(vswhere).existsSync()) {
+    final r = await Process.run(vswhere, [
+      '-latest',
+      '-products',
+      '*',
+      '-requires',
+      'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+      '-property',
+      'installationPath',
+    ]);
+    final path = (r.stdout as String).trim().split(RegExp(r'\r?\n')).first;
+    final script = '$path\\VC\\Auxiliary\\Build\\vcvarsall.bat';
+    if (path.isNotEmpty && File(script).existsSync()) return script;
+  }
+  throw StateError(
+    'telosnex_audio needs the Visual Studio C++ build tools on Windows.',
+  );
 }
 
 String? _findTool(String name, [Map<String, String>? env]) {
