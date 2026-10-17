@@ -57,6 +57,11 @@ const UInt16 kFixedPlayoutDelayEstimate = 0;
 const UInt16 kFixedRecordDelayEstimate = 0;
 const UInt16 kStartEngineMaxRetries = 10;  // Maximum blocking 1sec.
 const useconds_t kStartEngineRetryDelayMs = 100;
+// Telosnex: off. Nothing sets an AudioDeviceObserver, so no one receives the
+// muted-talker events. On macOS, registering the listener restarts the
+// voice-processing device about 4 times at engine start. The mic indicator
+// flickers, and the first captured frame comes about 290 ms later.
+constexpr bool kEnableMutedSpeechActivityListener = false;
 
 const size_t kMaximumFramesPerBuffer = 3072;
 const size_t kAudioSampleSize = 2;  // Signed 16-bit integer
@@ -2329,7 +2334,9 @@ int32_t AudioEngineDevice::ApplyDeviceEngineState(EngineStateUpdate state) {
       }
 
       // Muted talker detection.
-      if (@available(iOS 17.0, macCatalyst 17.0, macOS 14.0, tvOS 17.0, visionOS 1.0, *)) {
+      if (!kEnableMutedSpeechActivityListener) {
+        // Off. See kEnableMutedSpeechActivityListener.
+      } else if (@available(iOS 17.0, macCatalyst 17.0, macOS 14.0, tvOS 17.0, visionOS 1.0, *)) {
         auto listener_block = ^(AVAudioVoiceProcessingSpeechActivityEvent event) {
           LOGI() << "AVAudioVoiceProcessingSpeechActivityEvent: " << event;
           RTC_DCHECK(event == AVAudioVoiceProcessingSpeechActivityStarted ||
@@ -2942,10 +2949,15 @@ int32_t AudioEngineDevice::ApplyDeviceEngineState(EngineStateUpdate state) {
           // Workaround for engine not starting in some cases when other apps are using voice
           // processing already.
           // TODO: Find a better workaround, or a cleaner way to wait the vp config is complete.
-          [engine_device_ prepare];
+          // Telosnex: only before a retry. The first start does not need the wait in tests
+          // (also with another app using voice processing), and the wait delays each start
+          // by 0.1 seconds.
+          if (start_retry_count > 0) {
+            [engine_device_ prepare];
 
-          LOGI() << "Sleeping for 0.1 seconds...";
-          usleep(100000);  // 0.1 seconds
+            LOGI() << "Sleeping for 0.1 seconds...";
+            usleep(100000);  // 0.1 seconds
+          }
 #endif
 
           NSError* error = nil;
