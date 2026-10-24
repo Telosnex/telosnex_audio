@@ -1,13 +1,14 @@
 /// Builds the web engine core (ADR D14) with Emscripten: telosnex_audio.wasm
 /// in --out.
 ///
-/// The release workflow runs it in the pinned emscripten/emsdk:5.0.0 image
-/// (native_prebuilt ADR 002 D10). For a local build, activate Emscripten
+/// The kiln release workflow runs it in the pinned emscripten/emsdk:5.0.0
+/// image (kiln ADR 002 D10). --toolchain-file gets the Emscripten version
+/// for web.json. For a local build, activate Emscripten
 /// 5.0.0 or put it at ../emsdk, then install the file into lib/web/ for the
 /// tests and the example app:
 ///
-///     dart tool/build_web.dart --out /tmp/telosnex_audio_web
-///     dart run native_prebuilt:web install-dev --from /tmp/telosnex_audio_web
+///     dart tool/kiln/build_web.dart --out /tmp/telosnex_audio_web
+///     dart run kiln:web install-dev --from /tmp/telosnex_audio_web
 ///
 /// Without --from, install-dev downloads the released file of
 /// native_artifacts/web.json.
@@ -18,8 +19,9 @@ library;
 import 'dart:io';
 
 const _usage =
-    'dart run tool/build_web.dart --out <dir>\n'
-    '  --out  Directory for telosnex_audio.wasm.';
+    'dart run tool/kiln/build_web.dart --out <dir> [--toolchain-file <file>]\n'
+    '  --out             Directory for telosnex_audio.wasm.\n'
+    '  --toolchain-file  Gets the Emscripten version.';
 
 const _output = 'telosnex_audio.wasm';
 const _emscripten = '5.0.0 (a7c5deabd7c88ba1c38ebe988112256775f944c6)';
@@ -60,8 +62,11 @@ const _linkFlags = [
 ];
 
 Future<void> main(List<String> args) async {
-  final out = Directory(_parseOut(args)).absolute;
-  final root = Directory.fromUri(Platform.script.resolve('..')).absolute.path;
+  final (outPath, toolchainFile) = _parse(args);
+  final out = Directory(outPath).absolute;
+  final root = Directory.fromUri(
+    Platform.script.resolve('../..'),
+  ).absolute.path;
   if (await out.exists()) {
     await for (final entity in out.list()) {
       final name = entity.uri.pathSegments.lastWhere((s) => s.isNotEmpty);
@@ -74,6 +79,9 @@ Future<void> main(List<String> args) async {
   final version = await _firstLine(['emcc', '--version'], root, emsdkEnv);
   if (!version.contains(_emscripten)) {
     _fail('Emscripten $_emscripten is required, found: $version');
+  }
+  if (toolchainFile != null) {
+    await File(toolchainFile).writeAsString('Emscripten $_emscripten\n');
   }
 
   final tmp = await Directory.systemTemp.createTemp('tsnx_wasm');
@@ -113,13 +121,16 @@ Future<void> main(List<String> args) async {
   }
 }
 
-String _parseOut(List<String> args) {
+(String, String?) _parse(List<String> args) {
   if (args.contains('-h') || args.contains('--help')) {
     stdout.writeln(_usage);
     exit(0);
   }
-  if (args.length != 2 || args.first != '--out') _fail(_usage);
-  return args.last;
+  return switch (args) {
+    ['--out', final out] => (out, null),
+    ['--out', final out, '--toolchain-file', final file] => (out, file),
+    _ => _fail(_usage),
+  };
 }
 
 /// Null if the emcc on the PATH is the pinned version, else

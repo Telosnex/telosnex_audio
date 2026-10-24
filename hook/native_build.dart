@@ -1,6 +1,6 @@
 // Native build for the telosnex_audio code asset (ADR D2).
 //
-// package:native_prebuilt (native_prebuilt
+// package:kiln (kiln
 // docs/ADR_001_PREBUILT_NATIVE_LIBRARIES.md) chooses between the prebuilt
 // files in native_artifacts/prebuilt.json and a source build. The source
 // build uses CMake with a build folder that persists in
@@ -19,7 +19,7 @@ import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
 import 'package:hooks/hooks.dart';
-import 'package:native_prebuilt/native_prebuilt.dart';
+import 'package:kiln/kiln.dart';
 
 const packageName = 'telosnex_audio';
 const assetName = 'src/ffi.dart';
@@ -65,7 +65,7 @@ Future<void> buildNative(BuildInput input, BuildOutputBuilder output) async {
       'Prebuilt files are Release builds.',
     );
   }
-  await NativePrebuilt(
+  await Kiln(
     input: input,
     output: output,
     log: (message) => stderr.writeln('[telosnex_audio] $message'),
@@ -222,7 +222,7 @@ Future<File> _buildFromSource(
 }
 
 /// The NDK root. A Flutter build gives its clang
-/// (`<ndk>/toolchains/llvm/prebuilt/<host>/bin/clang`). `native_prebuilt:build`
+/// (`<ndk>/toolchains/llvm/prebuilt/<host>/bin/clang`). `kiln:build`
 /// gives no compiler, so then the `android_ndk_home` user define or the
 /// environment names the NDK.
 String _androidNdk(BuildInput input) {
@@ -274,7 +274,7 @@ String _androidLlvmTool(String ndk, String name) {
 }
 
 /// Runs the Visual Studio developer prompt script and returns its
-/// environment. The Flutter tool gives the script. `native_prebuilt:build`
+/// environment. The Flutter tool gives the script. `kiln:build`
 /// does not, so then vswhere finds `vcvarsall.bat`.
 Future<Map<String, String>> _msvcEnvironment(
   CodeConfig code,

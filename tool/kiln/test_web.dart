@@ -1,32 +1,36 @@
-// Runs the web tests on the web runtime files (native_prebuilt ADR 002 D10,
+// Runs the web tests on the web runtime files (kiln ADR 002 D10,
 // D13): the engine cases in Chrome, then the real-time AudioWorklet check of
 // the example app, compiled to JS and to Wasm.
 //
-//   dart tool/web_test.dart                  the released files of web.json
-//   dart tool/web_test.dart --from <dir>     a tool/build_web.dart output
+//   dart tool/kiln/test_web.dart               the released files of web.json
+//   dart tool/kiln/test_web.dart --from <dir>  a tool/kiln/build_web.dart output
 //
 // With --from, the example app also uses <dir> (user defines web_build:
 // local and web_build_dir), because the release for these sources does not
-// exist yet. The script restores example/pubspec.yaml afterwards.
+// exist yet. The script restores example/pubspec.yaml afterwards. The kiln
+// release workflow runs it with KILN_WEB_FILES, the same as --from.
 import 'dart:io';
 
 Future<void> main(List<String> args) async {
   final String? from;
   if (args.isEmpty) {
-    from = null;
+    from = switch (Platform.environment['KILN_WEB_FILES']) {
+      final String dir when dir.isNotEmpty => Directory(dir).absolute.path,
+      _ => null,
+    };
   } else if (args.length == 2 && args.first == '--from') {
     from = Directory(args.last).absolute.path;
   } else {
-    stderr.writeln('Usage: dart tool/web_test.dart [--from <dir>]');
+    stderr.writeln('Usage: dart tool/kiln/test_web.dart [--from <dir>]');
     exit(2);
   }
-  Directory.current = File.fromUri(Platform.script).parent.parent.path;
+  Directory.current = File.fromUri(Platform.script).parent.parent.parent.path;
 
   // `dart run` cannot resolve the Flutter SDK dependency by itself.
   await _run('flutter', ['pub', 'get']);
   await _run('dart', [
     'run',
-    'native_prebuilt:web',
+    'kiln:web',
     'install-dev',
     if (from != null) ...['--from', from],
   ]);

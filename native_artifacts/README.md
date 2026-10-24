@@ -6,12 +6,12 @@ build, the hook installs the web runtime files instead.
 
 `prebuilt.json` pins the library of each target by SHA-256. It names the
 GitHub release that holds the library. `web.json` pins the web runtime files
-of the same release. The workflow `.github/workflows/native_release.yml`
-writes both files (native_prebuilt ADR 001 and ADR 002).
+of the same release. The workflow `.github/workflows/kiln_release.yml`
+writes both files (kiln ADR 001 and ADR 002).
 
 The hook uses the release only when the package sources match its source
-key. Run `dart run native_prebuilt:key` to show the key. Run
-`dart run native_prebuilt:check` to check both manifests.
+key. Run `dart run kiln:key` to show the key. Run
+`dart run kiln:check` to check both manifests.
 
 ## Targets
 
@@ -36,13 +36,13 @@ glibc version and the page alignment.
 The web runtime has three files:
 
 - `telosnex_audio.wasm`: the engine core. The release workflow builds it
-  with `tool/build_web.dart`.
+  with `tool/kiln/build_web.dart`.
 - `lib/web/telosnex_audio_worklet.js`: the AudioWorklet processor.
 - `lib/web/telosnex_audio_storage.js`: the Worker that keeps the backing
   store.
 
 In a Flutter web build, the hook installs the three files in
-`web/native_prebuilt/telosnex_audio/` of the app. The engine loads each
+`web/kiln/telosnex_audio/` of the app. The engine loads each
 file with the query `v=<webRuntimeVersion>`. The constant is in
 `lib/src/web_runtime.g.dart`. Thus a browser does not use a cached file of
 another release.
@@ -56,34 +56,34 @@ or newer and the compiler of the target. Android needs the NDK.
 To change `telosnex_audio_worklet.js` or `telosnex_audio_storage.js`:
 
 1. Edit the file.
-2. Run `dart run native_prebuilt:web stamp`.
+2. Run `dart run kiln:web stamp`.
 3. Commit the file, `web.json` and `lib/src/web_runtime.g.dart`.
 
 To run the web tests on the released `telosnex_audio.wasm`:
 
 ```bash
-dart tool/web_test.dart
+dart tool/kiln/test_web.dart
 ```
 
 To run the web tests on a local build, activate Emscripten 5.0.0 or put it
 at `../emsdk`. Then run:
 
 ```bash
-dart tool/build_web.dart --out /tmp/telosnex_audio_web
-dart tool/web_test.dart --from /tmp/telosnex_audio_web
+dart tool/kiln/build_web.dart --out /tmp/telosnex_audio_web
+dart tool/kiln/test_web.dart --from /tmp/telosnex_audio_web
 ```
 
-The tests need Chrome. `web_test.dart` runs `native_prebuilt:web
+The tests need Chrome. `web_test.dart` runs `kiln:web
 install-dev`, which puts `telosnex_audio.wasm` in `lib/web/`. Git ignores
 that file.
 
 To make a release:
 
 1. Merge the change to `main`.
-2. Run `git push -f origin HEAD:native-release` from `main`.
+2. Run `git push -f origin HEAD:kiln-release` from `main`.
 3. When the workflow is done, open a pull request from the branch
-   `native-manifest/<tag>`. The workflow cannot open it.
+   `kiln-manifest/<tag>`. The workflow cannot open it.
 4. Merge the pull request.
 
-Run `git push -f origin HEAD:native-release-dry` to build all files with no
+Run `git push -f origin HEAD:kiln-release-dry` to build all files with no
 upload.
