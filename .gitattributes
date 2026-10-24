@@ -1,5 +1,5 @@
-# Same bytes on every host, so the native_prebuilt source key matches
-# (native_prebuilt ADR 001 D3).
+# Same bytes on every host, so the kiln source key matches
+# (kiln ADR 001 D3).
 * text=auto eol=lf
 # Vendored native sources: never convert line endings.
 CMakeLists.txt -text

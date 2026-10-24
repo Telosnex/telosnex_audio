@@ -175,13 +175,13 @@ jobs:
           dart tool/licenses.dart --check
           dart analyze --fatal-infos
 
-      # web.json pins the hand-written web files (native_prebuilt ADR 002 D6).
+      # web.json pins the hand-written web files (kiln ADR 002 D6).
       - name: The hand-written web files match web.json
         run: |
           set -euo pipefail
-          dart run native_prebuilt:web stamp
+          dart run kiln:web stamp
           git diff --exit-code native_artifacts/web.json lib/src/web_runtime.g.dart || {
-            echo "::error::Run: dart run native_prebuilt:web stamp"
+            echo "::error::Run: dart run kiln:web stamp"
             exit 1
           }
 
@@ -281,7 +281,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     container:
-      # emscripten/emsdk:5.0.0, as in native_release.yml.
+      # emscripten/emsdk:5.0.0, as in kiln_release.yml.
       image: emscripten/emsdk@sha256:67df07bc59f86685818fa801d340b54e576fe4276cfd3bcfc4da61d564217737
     steps:
       - name: Install unzip
@@ -299,7 +299,7 @@ jobs:
         with:
           sdk: 3.13.1
       - name: Build telosnex_audio.wasm
-        run: dart tool/build_web.dart --out "$RUNNER_TEMP/web"
+        run: dart tool/kiln/build_web.dart --out "$RUNNER_TEMP/web"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: web
@@ -336,4 +336,4 @@ jobs:
       # Engine cases in Chrome (wasm core, storage worker, ?v= on every file),
       # then the real-time AudioWorklet check (ADR step 9 gate), JS and Wasm.
       - name: Web tests
-        run: dart tool/web_test.dart --from "$RUNNER_TEMP/web"
+        run: dart tool/kiln/test_web.dart --from "$RUNNER_TEMP/web"

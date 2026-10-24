@@ -1,4 +1,4 @@
-// native_prebuilt ADR 002 D7 and I3: every web runtime file loads with the
+// kiln ADR 002 D7 and I3: every web runtime file loads with the
 // query v=<webRuntimeVersion>, so a browser does not use a cached file of
 // another version.
 @TestOn('browser')
@@ -19,11 +19,11 @@ const _files = {
 };
 
 void main() {
-  test('an app loads the files from native_prebuilt/telosnex_audio/', () {
+  test('an app loads the files from kiln/telosnex_audio/', () {
     for (final file in _files) {
       expect(
         webRuntimeUrl(file),
-        'native_prebuilt/telosnex_audio/$file?v=$webRuntimeVersion',
+        'kiln/telosnex_audio/$file?v=$webRuntimeVersion',
       );
     }
   });

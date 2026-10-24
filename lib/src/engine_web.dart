@@ -25,15 +25,15 @@ import 'web_runtime.g.dart';
 /// The URL of a web runtime file, relative to the document base URI.
 ///
 /// In an app, the build hook installs the files in
-/// web/native_prebuilt/telosnex_audio/ (native_prebuilt ADR 002 D1, D8).
+/// web/kiln/telosnex_audio/ (kiln ADR 002 D1, D8).
 /// `flutter test --platform chrome` runs no web hook but serves
 /// package:telosnex_audio/ at packages/telosnex_audio/, and
-/// `native_prebuilt:web install-dev` puts the files in lib/web/. Each URL has
+/// `kiln:web install-dev` puts the files in lib/web/. Each URL has
 /// the query `v=<webRuntimeVersion>`, so a browser does not use a cached file
 /// of another version (ADR 002 D7).
 String webRuntimeUrl(String file, {bool test = false}) =>
     '${test ? _testAssetBase : _appAssetBase}/$file?v=$webRuntimeVersion';
-const _appAssetBase = 'native_prebuilt/telosnex_audio';
+const _appAssetBase = 'kiln/telosnex_audio';
 const _testAssetBase = 'packages/telosnex_audio/web';
 bool _testAssets = false;
 String _assetUrl(String file) => webRuntimeUrl(file, test: _testAssets);
