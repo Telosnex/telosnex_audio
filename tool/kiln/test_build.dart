@@ -3,8 +3,7 @@
 /// - Linux: the newest glibc requirement of the library is 2.35 or older.
 /// - Android arm64 and x64: every LOAD segment is 16 KB aligned.
 ///
-/// The workflow runs a copy of this file outside the package, so it imports
-/// only dart: libraries.
+/// The workflow runs it with `dart tool/kiln/test_build.dart`.
 library;
 
 import 'dart:io';

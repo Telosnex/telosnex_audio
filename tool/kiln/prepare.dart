@@ -1,8 +1,8 @@
 /// Runs before each native build of the kiln release workflow: installs
 /// Ninja, and on Linux also CMake, g++ and the ALSA and PulseAudio headers.
 ///
-/// The workflow runs a copy of this file outside the package, so it imports
-/// only dart: libraries.
+/// The workflow runs it with `dart tool/kiln/prepare.dart`: `dart run` would
+/// first run the build hook, which needs these tools.
 library;
 
 import 'dart:io';
