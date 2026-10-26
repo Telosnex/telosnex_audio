@@ -1,0 +1,76 @@
+name: Unit
+
+# Format, analyze, the web files check and the Dart API tests (they build the
+# native asset through the hook) on macOS ARM64. Every pull request.
+on:
+  push:
+    # ci/** branches run it too: a new workflow cannot be started by hand
+    # before it is on main.
+    branches: [main, 'ci/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unit-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  FLUTTER_SUPPRESS_ANALYTICS: 'true'
+
+jobs:
+  dart:
+    name: Unit
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install build tools
+        run: command -v ninja || brew install ninja
+
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@8e94d6a140db5300d9e5329bc8c2e4dc30154a08 # main
+
+      - name: Resolve dependencies
+        run: |
+          set -euo pipefail
+          flutter pub get
+          (cd example && flutter pub get)
+
+      - name: Format and analyze
+        run: |
+          set -euo pipefail
+          dart format --output=none --set-exit-if-changed lib test tool hook example/lib
+          dart tool/licenses.dart --check
+          dart analyze --fatal-infos
+
+      # web.json pins the hand-written web files (kiln ADR 002 D6).
+      - name: The hand-written web files match web.json
+        run: |
+          set -euo pipefail
+          dart run kiln:web stamp
+          git diff --exit-code native_artifacts/web.json lib/src/web_runtime.g.dart || {
+            echo "::error::Run: dart run kiln:web stamp"
+            exit 1
+          }
+
+      - name: Dart API tests (builds the native asset)
+        run: flutter test test/engine_test.dart test/licenses_test.dart test/hook_build_test.dart
+
+      - name: Example app builds through the hook
+        run: |
+          set -euo pipefail
+          cd example
+          flutter build macos --debug
+          test -d build/macos/Build/Products/Debug/telosnex_audio_example.app/Contents/Frameworks/telosnex_audio.framework
+
