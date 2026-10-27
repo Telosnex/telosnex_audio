@@ -5,8 +5,13 @@ Scope: package code through step 9. App migration (steps 5-6) is not done.
 Hardware gates remain open as listed below.
 
 ## Facts
-- WebRTC checkout: ~/dev/libwebrtc/build/src at webrtc-sdk b1800a61db (working tree has fork
-  patches; vendor reads git objects, not the working tree). Chromium third_party a3b630c291f1.
+- WebRTC: webrtc-sdk m144_release 30d5e63ae9 (2026-10-26; was b1800a61db), Chromium third_party
+  a3b630c291f1 (same in DEPS at both). The gclient checkout ~/dev/libwebrtc is gone. vendor.dart needs
+  only git objects: ~/dev/webrtc-vendor-src/src (depth-1 fetch of the pinned commits) with
+  third_party/ (depth 1, --filter=blob:none). Run: TSNX_WEBRTC_SRC=~/dev/webrtc-vendor-src/src
+  dart tool/vendor.dart. Re-checked: at the old pin it reproduced the tree minus the 6 local patches.
+  ~/dev/webrtc is a full webrtc-sdk clone (history, m150_release); ~/dev/libwebrtc-pcm-playout is a
+  fresh clone of Telosnex/libwebrtc telosnex/m144-pcm-playout (the old folder was empty; deleted).
 - Spike list (443 TUs): /tmp/wrtc/srcs.txt. Spike gen headers: ~/dev/libwebrtc/build/out-pcm-macos/gen.
 - Sonic b93885dcb70aae50c6f76b0fe4e0868f029a077e, minimp3 ea99364f61c14656440e8d77e9c233ccf3124633.
 - Fork clock correction: ~/dev/libwebrtc branch telosnex/m144-pcm-playout, src/internal/{drift_servo,hardware_clock_estimator,capture_clock_policy,audio_clock_correction}.
