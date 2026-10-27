@@ -4,6 +4,8 @@
 //
 //   dart tool/kiln/test_web.dart               the released files of web.json
 //   dart tool/kiln/test_web.dart --from <dir>  a tool/kiln/build_web.dart output
+//   ... --browser firefox                      the AudioWorklet check in
+//                                              headless Firefox, JS only
 //
 // With --from, the example app also uses <dir> (user defines web_build:
 // local and web_build_dir), because the release for these sources does not
@@ -12,18 +14,27 @@
 import 'dart:io';
 
 Future<void> main(List<String> args) async {
-  final String? from;
-  if (args.isEmpty) {
-    from = switch (Platform.environment['KILN_WEB_FILES']) {
-      final String dir when dir.isNotEmpty => Directory(dir).absolute.path,
-      _ => null,
-    };
-  } else if (args.length == 2 && args.first == '--from') {
-    from = Directory(args.last).absolute.path;
-  } else {
-    stderr.writeln('Usage: dart tool/kiln/test_web.dart [--from <dir>]');
-    exit(2);
+  String? from;
+  var browser = 'chrome';
+  for (var i = 0; i < args.length; i++) {
+    if (args[i] == '--from' && i + 1 < args.length) {
+      from = Directory(args[++i]).absolute.path;
+    } else if (args[i] == '--browser' &&
+        i + 1 < args.length &&
+        const {'chrome', 'firefox'}.contains(args[i + 1])) {
+      browser = args[++i];
+    } else {
+      stderr.writeln(
+        'Usage: dart tool/kiln/test_web.dart [--from <dir>] '
+        '[--browser chrome|firefox]',
+      );
+      exit(2);
+    }
   }
+  from ??= switch (Platform.environment['KILN_WEB_FILES']) {
+    final String dir when dir.isNotEmpty => Directory(dir).absolute.path,
+    _ => null,
+  };
   Directory.current = File.fromUri(Platform.script).parent.parent.parent.path;
 
   // `dart run` cannot resolve the Flutter SDK dependency by itself.
@@ -34,13 +45,16 @@ Future<void> main(List<String> args) async {
     'install-dev',
     if (from != null) ...['--from', from],
   ]);
-  await _run('flutter', [
-    'test',
-    '--platform',
-    'chrome',
-    'test/web_engine_test.dart',
-    'test/web_runtime_files_test.dart',
-  ]);
+  // flutter test runs browser tests only in Chrome.
+  if (browser == 'chrome') {
+    await _run('flutter', [
+      'test',
+      '--platform',
+      'chrome',
+      'test/web_engine_test.dart',
+      'test/web_runtime_files_test.dart',
+    ]);
+  }
 
   final pubspec = File('example/pubspec.yaml');
   final original = await pubspec.readAsString();
@@ -56,7 +70,8 @@ Future<void> main(List<String> args) async {
       );
     }
     await _run('flutter', ['pub', 'get'], cwd: 'example');
-    for (final wasm in [false, true]) {
+    // Flutter runs dart2wasm builds only in Chromium (no wasmAllowList).
+    for (final wasm in [false, if (browser == 'chrome') true]) {
       await _run('flutter', [
         'build',
         'web',
@@ -64,7 +79,7 @@ Future<void> main(List<String> args) async {
         '-t',
         'lib/web_check.dart',
       ], cwd: 'example');
-      await _run('dart', ['tool/web_check.dart', '--browser', 'chrome']);
+      await _run('dart', ['tool/web_check.dart', '--browser', browser]);
     }
   } finally {
     if (from != null) {
