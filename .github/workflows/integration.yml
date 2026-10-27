@@ -315,7 +315,7 @@ jobs:
         if: matrix.os == 'macos'
         run: command -v ninja || brew install ninja
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@ac661f93e2b65b203d12956ecc215da3b8ddf871 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
 
       # The engine cases with the manual device, and an engine that outlives
       # its isolate (hot restart), through FFI on the VM.
@@ -360,7 +360,7 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q cmake ninja-build
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@ac661f93e2b65b203d12956ecc215da3b8ddf871 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
 
       - name: Example app builds through the hook
         run: |
@@ -390,7 +390,7 @@ jobs:
       - name: Install build tools
         run: command -v ninja || brew install ninja
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@ac661f93e2b65b203d12956ecc215da3b8ddf871 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
 
       - name: Resolve dependencies
         working-directory: example
@@ -405,21 +405,17 @@ jobs:
         working-directory: example
         run: flutter build ios --simulator --debug -t integration_test/engine_test.dart
 
-      - uses: Telosnex/telosnex_ci_tools/actions/ios-simulator-boot@ac661f93e2b65b203d12956ecc215da3b8ddf871 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/ios-simulator-boot@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
 
-      # Runs until the job ends; its samples go up with the simulator logs.
-      - name: Sample the app's stacks while it runs
-        run: tool/ci/ios_sample_runner.sh "$RUNNER_TEMP/ios-flutter-test/samples" > /dev/null 2>&1 &
-
-      - uses: Telosnex/telosnex_ci_tools/actions/ios-flutter-test@ac661f93e2b65b203d12956ecc215da3b8ddf871 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/ios-flutter-test@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
         with:
           working-directory: example
           target: integration_test/engine_test.dart
           # Its Xcode build reuses the hook output of "Build the app".
           idle-minutes: '15'
-          # Launch to VM service took 40 s when it worked, and two of three
-          # attempts in a run passed 150 s (the default) without it
-          # (2026-10-27); fonnx uses 600 s.
+          # Launch to VM service took 40-190 s on passing attempts. When
+          # flutter misses the app's VM service line, missed-line-seconds
+          # (30) ends the attempt early.
           connect-seconds: '600'
 
       # The simulator log, the flutter test output and stall screenshots of
@@ -449,9 +445,9 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q cmake ninja-build
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@ac661f93e2b65b203d12956ecc215da3b8ddf871 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
 
-      - uses: Telosnex/telosnex_ci_tools/actions/android-emulator@ac661f93e2b65b203d12956ecc215da3b8ddf871 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/android-emulator@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
         id: emulator
         with:
           api-level: '36'
@@ -528,7 +524,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@ac661f93e2b65b203d12956ecc215da3b8ddf871 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:

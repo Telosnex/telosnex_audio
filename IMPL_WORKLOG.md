@@ -187,5 +187,7 @@ Status (2026-10-05):
 - echo_probe now fails (exit 1) on a failed request, an engine error, a second without
   capture, a track that does not move, or an unanswered route selection. Levels are
   informational on virtual devices.
-- iOS simulator on macos-26: launch-to-VM-service took 40-80 s when it worked, and passed
-  150 s in two of three attempts in one run; connect-seconds 600 and a 90 min job, as fonnx.
+- iOS simulator on macos-26: failed attempts were flutter_tools missing the app's "Dart VM
+  service is listening" line (the app logged it 2 s after launch and sat idle; stack samples).
+  telosnex_ci_tools 9179ea7 ends such an attempt 30 s after our own simulator log has the line,
+  instead of after connect-seconds (600).
