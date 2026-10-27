@@ -26,6 +26,20 @@ final lines = <String>[];
 void log(String s) {
   lines.add(s);
   debugPrint('TSNX_WEB: $s');
+  // Each line also goes to the runner as it happens, so a run that never
+  // reports shows how far it got.
+  final url = Uri.base.queryParameters['report'];
+  if (url != null) {
+    unawaited(
+      web.window
+          .fetch(
+            '$url/line'.toJS,
+            web.RequestInit(method: 'POST', body: s.toJS),
+          )
+          .toDart
+          .then((_) {}, onError: (Object _) {}),
+    );
+  }
 }
 
 final failures = <String>[];
@@ -90,13 +104,16 @@ class _CheckPageState extends State<CheckPage> {
   Future<void> open() async {
     final e = await TelosnexAudio.open();
     engine = e;
-    // Chrome with --autoplay-policy=no-user-gesture-required runs at once.
-    for (var i = 0; i < 20 && debugContextState(e) != 'running'; i++) {
+    // Browsers that allow autoplay (the CI flags and prefs) run at once, or
+    // within seconds on a loaded runner; the others wait for a click.
+    log('opened; context ${debugContextState(e)}');
+    for (var i = 0; i < 200 && debugContextState(e) != 'running'; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
     if (debugContextState(e) == 'running') {
       await start();
     } else {
+      log('context ${debugContextState(e)} after 10 s: waiting for a click');
       setState(() => status = 'click Start (the browser needs a gesture)');
     }
   }

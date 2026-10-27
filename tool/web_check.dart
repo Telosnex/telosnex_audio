@@ -47,7 +47,16 @@ Future<void> main(List<String> args) async {
   }
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
   final report = Completer<String>();
+  // The page's log lines as they happen (shown when it never reports).
+  final progress = <String>[];
   server.listen((req) async {
+    if (req.method == 'POST' && req.uri.path == '/report/line') {
+      final line = await utf8Body(req);
+      req.response.statusCode = 204;
+      await req.response.close();
+      progress.add(line);
+      return;
+    }
     if (req.method == 'POST' && req.uri.path == '/report') {
       final body = await utf8Body(req);
       req.response.statusCode = 204;
@@ -116,7 +125,11 @@ user_pref("media.navigator.streams.fake", true);
   try {
     result = await report.future.timeout(const Duration(minutes: 3));
   } on TimeoutException {
-    result = 'FAIL timeout: no report in 3 min';
+    result = [
+      if (progress.isEmpty) 'the page logged nothing',
+      ...progress,
+      'FAIL timeout: no report in 3 min',
+    ].join('\n');
   }
   browserProcess?.kill();
   await safari?.close();
