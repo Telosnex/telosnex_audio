@@ -39,7 +39,7 @@ jobs:
       - name: Install build tools
         run: command -v ninja || brew install ninja
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@8e94d6a140db5300d9e5329bc8c2e4dc30154a08 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@ac661f93e2b65b203d12956ecc215da3b8ddf871 # main
 
       - name: Resolve dependencies
         run: |

@@ -1,12 +1,15 @@
 name: Integration
 
 # Native C++ tests (macOS: plain, ThreadSanitizer, and an x86_64 compile; Linux
-# x64 and arm64; Windows x64, arm64, and an arm64 cross compile), the example
-# app on every platform (Dart API tests on the VM, the app build through the
+# x64 and arm64; Windows x64, arm64, and an arm64 cross compile) and the
+# platform devices the runners have (macOS virtual sound device: CoreAudio and
+# Apple voice processing; Linux: PulseAudio null sink); the example app on
+# every platform (Dart API tests on the VM, the app build through the
 # native-assets hook, and the engine cases of test/engine_cases.dart inside
-# the app: desktop, iOS simulator, Android emulator), and the web engine
-# (wasm core tests in Chrome and the real-time AudioWorklet check, on a wasm
-# built from these sources in the image of the release workflow).
+# the app: desktop, iOS simulator, Android emulator); and the web engine
+# (wasm core tests in Chrome, the real-time AudioWorklet check in Chrome and
+# Firefox, on a wasm built from these sources in the image of the release
+# workflow).
 on:
   push:
     branches: [main, 'ci/**']
@@ -118,14 +121,35 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -q
-          sudo apt-get install -y -q cmake ninja-build g++ libasound2-dev libpulse-dev
+          sudo apt-get install -y -q cmake ninja-build g++ libasound2-dev libpulse-dev \
+            pulseaudio pulseaudio-utils
 
       - name: Build and run native tests
         run: |
           set -euo pipefail
-          cmake -S . -B build/test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON
+          cmake -S . -B build/test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON -DTSNX_BUILD_PROBE=ON
           cmake --build build/test
           ./build/test/native_test/tsnx_tests
+
+      # The PulseAudio device on a null sink (its monitor is the mic, so the
+      # APM sees the echo): routes, then 3 s of play and capture with clock
+      # observation. echo_probe fails when the engine does not open or a
+      # selection does not show; the alarm catches a start/stop hang.
+      # Not ALSA: the runners' Azure kernel has no sound card and no
+      # snd-dummy or snd-aloop module (not even in linux-modules-extra), and
+      # the WebRTC ALSA device lists only card devices, so ALSA through the
+      # pulse plugin does not open either (probe, 2026-10-27). A runner with
+      # a sound card or those modules would let `echo_probe --alsa` run here;
+      # ALSA was checked in the Parallels Ubuntu ARM64 VM (IMPL_WORKLOG.md).
+      - name: Platform device (PulseAudio null sink)
+        run: |
+          set -euo pipefail
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=tsnx_null
+          pactl set-default-sink tsnx_null
+          pactl set-default-source tsnx_null.monitor
+          perl -e 'alarm shift; exec @ARGV' 60 ./build/test/echo_probe --routes --pulse
+          perl -e 'alarm shift; exec @ARGV' 60 ./build/test/echo_probe --pulse --clock observe 3
 
       - name: Exported symbols are tsnx_* only (ADR D5)
         run: |
@@ -275,7 +299,7 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q cmake ninja-build
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@8e94d6a140db5300d9e5329bc8c2e4dc30154a08 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@ac661f93e2b65b203d12956ecc215da3b8ddf871 # main
 
       - name: Example app builds through the hook
         run: |
@@ -397,8 +421,14 @@ jobs:
           retention-days: 7
 
   web:
-    name: Web macOS ARM64 Chrome
+    name: ${{ matrix.name }}
     needs: web-build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Web macOS ARM64 Chrome, browser: chrome }
+          - { name: Web macOS ARM64 Firefox, browser: firefox }
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -408,14 +438,22 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@8e94d6a140db5300d9e5329bc8c2e4dc30154a08 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@ac661f93e2b65b203d12956ecc215da3b8ddf871 # main
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: web
           path: ${{ runner.temp }}/web
 
-      # Engine cases in Chrome (wasm core, storage worker, ?v= on every file),
-      # then the real-time AudioWorklet check (ADR step 9 gate), JS and Wasm.
+      - name: Firefox
+        if: matrix.browser == 'firefox'
+        run: test -x /Applications/Firefox.app/Contents/MacOS/firefox || brew install --cask firefox
+
+      # Chrome: the engine cases (wasm core, storage worker, ?v= on every
+      # file), then the real-time AudioWorklet check (ADR step 9 gate), JS and
+      # Wasm. Firefox: the AudioWorklet check, JS only (flutter test runs
+      # browser tests only in Chrome; Flutter runs dart2wasm builds only in
+      # Chromium). Safari is not here yet: its AudioContext needs a click on
+      # Start, which a safaridriver session could script.
       - name: Web tests
-        run: dart tool/kiln/test_web.dart --from "$RUNNER_TEMP/web"
+        run: dart tool/kiln/test_web.dart --from "$RUNNER_TEMP/web" --browser ${{ matrix.browser }}
