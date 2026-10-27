@@ -133,8 +133,10 @@ class AudioDeviceLinuxALSA : public AudioDeviceGeneric {
       RTC_LOCKS_EXCLUDED(mutex_) override;
 
  private:
+  int32_t StartRecordingLocked() RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   int32_t InitRecordingLocked() RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   int32_t StopRecordingLocked() RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  int32_t StartPlayoutLocked() RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   int32_t StopPlayoutLocked() RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   int32_t InitPlayoutLocked() RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   int32_t InitSpeakerLocked() RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
@@ -145,8 +147,6 @@ class AudioDeviceLinuxALSA : public AudioDeviceGeneric {
                          char* enumDeviceName = NULL,
                          int32_t ednLen = 0) const;
   int32_t ErrorRecovery(int32_t error, snd_pcm_t* deviceHandle);
-  void ResetHardwareClockObservation(bool playout);
-  void DeliverHardwareClockObservation(bool playout);
 
   bool KeyPressed() const;
 
@@ -158,7 +158,7 @@ class AudioDeviceLinuxALSA : public AudioDeviceGeneric {
 
   static void RecThreadFunc(void*);
   static void PlayThreadFunc(void*);
-  bool RecThreadProcess();
+  bool RecThreadProcess(int8_t* buffer);
   bool PlayThreadProcess();
 
   AudioDeviceBuffer* _ptrAudioBuffer;
@@ -202,22 +202,12 @@ class AudioDeviceLinuxALSA : public AudioDeviceGeneric {
   bool _recording;
   bool _playing;
   bool _recIsInitialized;
+  bool _recIsStopping;
   bool _playIsInitialized;
+  bool _playIsStopping;
 
   snd_pcm_sframes_t _recordingDelay;
   snd_pcm_sframes_t _playoutDelay;
-
-  // TSNX: public ALSA status exposes hw_ptr-equivalent positions through the
-  // atomic appl_ptr +/- delay relation. App counters and generations are reset
-  // after prepare/recovery so estimator windows never cross discontinuities.
-  snd_pcm_status_t* _recordingClockStatus;
-  snd_pcm_status_t* _playoutClockStatus;
-  int64_t _recordingAppFrames;
-  int64_t _playoutAppFrames;
-  int64_t _recordingLastClockObservationNs;
-  int64_t _playoutLastClockObservationNs;
-  uint32_t _recordingClockGeneration;
-  uint32_t _playoutClockGeneration;
 
   char _oldKeyState[32];
 #if defined(WEBRTC_USE_X11)
