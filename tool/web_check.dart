@@ -4,12 +4,13 @@
 //   dart tool/web_check.dart --browser chrome         headless Chrome
 //   dart tool/web_check.dart --browser chrome-window  Chrome on the speakers
 //   dart tool/web_check.dart --browser firefox        headless Firefox
-//   dart tool/web_check.dart --browser safari         opens Safari; click Start
+//   dart tool/web_check.dart --browser safari         Safari via safaridriver
 //   dart tool/web_check.dart --browser none           prints the URL
 //
 // Serves example/build/web on localhost, opens the page with
 // ?report=<this server>/report, and exits with the page's result.
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 /// Chrome: CHROME_EXECUTABLE (as for Flutter), else the macOS app.
@@ -73,6 +74,7 @@ Future<void> main(List<String> args) async {
 
   Process? browserProcess;
   Directory? profile;
+  _SafariSession? safari;
   if (browser == 'chrome' || browser == 'chrome-window') {
     profile = Directory.systemTemp.createTempSync('tsnx_chrome');
     browserProcess = await Process.start(_chrome, [
@@ -101,8 +103,7 @@ user_pref("media.navigator.streams.fake", true);
       url,
     ]);
   } else if (browser == 'safari') {
-    await Process.run('open', ['-a', 'Safari', url]);
-    stdout.writeln('In Safari, click Start if the page asks.');
+    safari = await _SafariSession.open(url);
   } else {
     stdout.writeln('Open $url in the browser.');
   }
@@ -118,6 +119,7 @@ user_pref("media.navigator.streams.fake", true);
     result = 'FAIL timeout: no report in 3 min';
   }
   browserProcess?.kill();
+  await safari?.close();
   await server.close(force: true);
   try {
     profile?.deleteSync(recursive: true);
@@ -134,4 +136,106 @@ Future<String> utf8Body(HttpRequest req) async {
     bytes.addAll(chunk);
   }
   return String.fromCharCodes(bytes);
+}
+
+/// A Safari window driven by safaridriver (enable it once with
+/// `sudo safaridriver --enable`). webkit:alwaysAllowAutoplay lets the
+/// AudioContext run without a click, and automation sessions give
+/// getUserMedia WebKit's mock microphones without a prompt.
+class _SafariSession {
+  _SafariSession(this._driver, this._base, this._id);
+
+  final Process _driver;
+  final Uri _base;
+  final String _id;
+
+  static Future<_SafariSession> open(String url) async {
+    final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final port = socket.port;
+    await socket.close();
+    final driver = await Process.start('safaridriver', ['--port', '$port']);
+    unawaited(driver.stdout.drain<void>());
+    unawaited(driver.stderr.drain<void>());
+    final base = Uri.parse('http://localhost:$port/');
+    final deadline = DateTime.now().add(const Duration(seconds: 20));
+    while (true) {
+      try {
+        final status = await _request('GET', base.resolve('status'));
+        if (status['ready'] == true) break;
+      } on Object {
+        // Not listening yet.
+      }
+      if (DateTime.now().isAfter(deadline)) {
+        driver.kill();
+        throw StateError(
+          'safaridriver did not start; enable it once with '
+          '`sudo safaridriver --enable`.',
+        );
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    // Safari takes a few seconds to release the automation window of a
+    // session that just ended ("already paired with another session").
+    Map<String, Object?> session;
+    for (var attempt = 1; ; attempt++) {
+      try {
+        session = await _request('POST', base.resolve('session'), {
+          'capabilities': {
+            'alwaysMatch': {
+              'browserName': 'safari',
+              'webkit:alwaysAllowAutoplay': true,
+            },
+          },
+        });
+        break;
+      } on StateError catch (e) {
+        if (attempt == 10) {
+          driver.kill();
+          rethrow;
+        }
+        stderr.writeln('$e; retrying');
+        await Future<void>.delayed(const Duration(seconds: 3));
+      }
+    }
+    final id = session['sessionId'] as String;
+    stdout.writeln(
+      'Safari ${(session['capabilities'] as Map)['browserVersion']}',
+    );
+    await _request('POST', base.resolve('session/$id/url'), {'url': url});
+    return _SafariSession(driver, base, id);
+  }
+
+  Future<void> close() async {
+    try {
+      await _request('DELETE', _base.resolve('session/$_id'));
+    } on Object catch (e) {
+      stderr.writeln('closing the Safari session: $e');
+    }
+    _driver.kill();
+  }
+
+  static Future<Map<String, Object?>> _request(
+    String method,
+    Uri uri, [
+    Object? body,
+  ]) async {
+    final client = HttpClient();
+    try {
+      final req = await client.openUrl(method, uri);
+      if (body != null) {
+        req.headers.contentType = ContentType.json;
+        req.write(jsonEncode(body));
+      }
+      final res = await req.close();
+      final text = await res.transform(utf8.decoder).join();
+      final json = jsonDecode(text) as Map<String, Object?>;
+      final value = json['value'];
+      if (res.statusCode != 200) {
+        throw StateError('safaridriver $method ${uri.path}: $value');
+      }
+      return value is Map<String, Object?> ? value : const {};
+    } finally {
+      client.close(force: true);
+    }
+  }
 }

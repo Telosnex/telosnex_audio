@@ -6,6 +6,8 @@
 //   dart tool/kiln/test_web.dart --from <dir>  a tool/kiln/build_web.dart output
 //   ... --browser firefox                      the AudioWorklet check in
 //                                              headless Firefox, JS only
+//   ... --browser safari                       the same in Safari (through
+//                                              safaridriver), JS only
 //
 // With --from, the example app also uses <dir> (user defines web_build:
 // local and web_build_dir), because the release for these sources does not
@@ -21,12 +23,12 @@ Future<void> main(List<String> args) async {
       from = Directory(args[++i]).absolute.path;
     } else if (args[i] == '--browser' &&
         i + 1 < args.length &&
-        const {'chrome', 'firefox'}.contains(args[i + 1])) {
+        const {'chrome', 'firefox', 'safari'}.contains(args[i + 1])) {
       browser = args[++i];
     } else {
       stderr.writeln(
         'Usage: dart tool/kiln/test_web.dart [--from <dir>] '
-        '[--browser chrome|firefox]',
+        '[--browser chrome|firefox|safari]',
       );
       exit(2);
     }
