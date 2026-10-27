@@ -50,6 +50,12 @@ export HOME="$ALSA_HOME"
 # from tmpfs it takes about 270 ms.
 mkdir -p /tmp/alsa-config && cp -a /usr/share/alsa/. /tmp/alsa-config/
 export ALSA_CONFIG_DIR=/tmp/alsa-config
+# The runner's pulseaudio and libasound2-plugins add config hooks (pulse.conf
+# and others) that make every device scan look for a PulseAudio server; with
+# none in the guest, routes hung (120 s, thousands of "Home directory not
+# accessible"). Only the hw devices are under test here, so drop them (in
+# the guest: /etc is an overlay).
+rm -f /tmp/alsa-config/alsa.conf.d/* /etc/alsa/conf.d/*
 cat /proc/asound/cards
 status=0
 step() {
