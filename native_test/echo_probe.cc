@@ -110,6 +110,8 @@ int main(int argc, char** argv) {
   current(1, cid);
   if (routes) {
     int bad = 0;
+    int unanswered = 0;
+    double slowest_ms = 0;
     for (int k = 0; k < 2; ++k) {
       const int n = tsnx_device_count(e, k);
       for (int i = 0; i <= n; ++i) {
@@ -117,19 +119,30 @@ int main(int argc, char** argv) {
         if (i < n) tsnx_device_get(e, k, i, id, sizeof id, name, sizeof name);
         else std::strcpy(id, "default");
         const int before = g_done.load();
+        const auto t0 = std::chrono::steady_clock::now();
         tsnx_device_select(e, k, id, 100 + i);
-        for (int w = 0; w < 500 && g_done.load() == before; ++w)
+        // Opening a device can take about 1 s (snd-aloop in a VM on CI).
+        for (int w = 0; w < 5000 && g_done.load() == before; ++w)
           std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        std::fprintf(stderr, "select %s %s -> ", k ? "in" : "out", id);
+        if (g_done.load() == before) ++unanswered;
+        const double ms = std::chrono::duration<double, std::milli>(
+                              std::chrono::steady_clock::now() - t0)
+                              .count();
+        if (ms > slowest_ms) slowest_ms = ms;
+        std::fprintf(stderr, "select %s %s (%.0f ms) -> ", k ? "in" : "out",
+                     id, ms);
         current(k, cid);
         if (std::strcmp(cid, id) != 0) ++bad;
       }
     }
-    std::fprintf(stderr, "%s: %d mismatches, %d failed requests\n",
-                 bad || g_failed.load() ? "ROUTES FAIL" : "ROUTES PASS", bad,
-                 g_failed.load());
+    const bool fail = bad || unanswered || g_failed.load();
+    std::fprintf(stderr,
+                 "%s: %d mismatches, %d failed requests, %d unanswered in "
+                 "10 s, slowest %.0f ms\n",
+                 fail ? "ROUTES FAIL" : "ROUTES PASS", bad, g_failed.load(),
+                 unanswered, slowest_ms);
     tsnx_engine_close(e);
-    return bad || g_failed.load() ? 1 : 0;
+    return fail ? 1 : 0;
   }
 
   if (device) {
