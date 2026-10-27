@@ -60,8 +60,9 @@ jobs:
       # macOS runners have an "Apple Virtual Sound Device" (in and out), so
       # both macOS devices open, select each route, play and capture: the
       # CoreAudio ADM and AudioEngineDevice (AVAudioEngine, Apple voice
-      # processing). echo_probe fails when the engine does not open or a
-      # selection does not show; the alarm catches a start/stop hang. Its
+      # processing). echo_probe fails when the engine does not open, a
+      # selection does not show, a request fails, a second has no capture, or
+      # the track does not move; the alarm catches a start/stop hang. Its
       # levels mean nothing on the virtual device.
       - name: Platform devices (CoreAudio, Apple voice processing)
         run: |
@@ -133,8 +134,9 @@ jobs:
 
       # The PulseAudio device on a null sink (its monitor is the mic, so the
       # APM sees the echo): routes, then 3 s of play and capture with clock
-      # observation. echo_probe fails when the engine does not open or a
-      # selection does not show; the alarm catches a start/stop hang.
+      # observation. echo_probe fails as on macOS (a failed request or
+      # selection, a second without capture, a track that does not move);
+      # the alarm catches a start/stop hang.
       # Not ALSA: the runners' Azure kernel has no sound card and no
       # snd-dummy or snd-aloop module (not even in linux-modules-extra), and
       # the WebRTC ALSA device lists only card devices, so ALSA through the
@@ -168,12 +170,17 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
+      # VB-CABLE: the hosted runners have no audio endpoints.
+      - name: Install VB-CABLE
+        shell: pwsh
+        run: tool/ci/install_vbcable.ps1
+
       - name: Build and run native tests (x64), compile arm64
         shell: cmd
         run: |
           for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set VS=%%i
           call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" x64 || exit /b 1
-          cmake -S . -B build\test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DTSNX_TARGET_ARCH=x64 || exit /b 1
+          cmake -S . -B build\test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON -DTSNX_BUILD_PROBE=ON -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DTSNX_TARGET_ARCH=x64 || exit /b 1
           cmake --build build\test || exit /b 1
           build\test\native_test\tsnx_tests.exe || exit /b 1
           dumpbin /exports build\test\telosnex_audio.dll > exports.txt
@@ -182,6 +189,19 @@ jobs:
           call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" x64_arm64 || exit /b 1
           cmake -S . -B build\arm64 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DTSNX_TARGET_ARCH=arm64 || exit /b 1
           cmake --build build\arm64 --target telosnex_audio || exit /b 1
+
+      # The Core Audio device on VB-CABLE: routes, 3 s of play and capture
+      # with clock observation, and start/stop cycles. echo_probe fails on a
+      # failed request, an engine error, a second without capture, or a
+      # track that does not move; the alarm catches a hang.
+      - name: Platform device (VB-CABLE)
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe() { perl -e 'alarm shift; exec @ARGV' 60 build/test/echo_probe.exe "$@"; }
+          probe --routes
+          probe --clock observe 3
+          for _ in 1 2 3; do probe 1; done
 
   native-windows-arm64:
     name: Windows ARM64 native
@@ -194,18 +214,36 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
+      # VB-CABLE: the hosted runners have no audio endpoints.
+      - name: Install VB-CABLE
+        shell: pwsh
+        run: tool/ci/install_vbcable.ps1
+
       - name: Build and run native tests (arm64)
         shell: cmd
         run: |
           for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set VS=%%i
           call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" arm64 || exit /b 1
-          cmake -S . -B build\test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DTSNX_TARGET_ARCH=arm64 || exit /b 1
+          cmake -S . -B build\test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON -DTSNX_BUILD_PROBE=ON -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DTSNX_TARGET_ARCH=arm64 || exit /b 1
           cmake --build build\test || exit /b 1
           build\test\native_test\tsnx_tests.exe || exit /b 1
           dumpbin /exports build\test\telosnex_audio.dll > exports.txt
           findstr /C:" tsnx_engine_open" exports.txt >nul || exit /b 1
           findstr /R /C:"^ *[1-9][0-9]*  *[0-9A-F][0-9A-F]*  *[0-9A-F][0-9A-F]*  *[^ ]" exports.txt | findstr /V /C:" tsnx_" && exit /b 1
           exit /b 0
+
+      # The Core Audio device on VB-CABLE: routes, 3 s of play and capture
+      # with clock observation, and start/stop cycles. echo_probe fails on a
+      # failed request, an engine error, a second without capture, or a
+      # track that does not move; the alarm catches a hang.
+      - name: Platform device (VB-CABLE)
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe() { perl -e 'alarm shift; exec @ARGV' 60 build/test/echo_probe.exe "$@"; }
+          probe --routes
+          probe --clock observe 3
+          for _ in 1 2 3; do probe 1; done
 
   example-desktop:
     name: ${{ matrix.name }}
