@@ -256,7 +256,11 @@ Future<void> run(AudioEngine engine) async {
     err.add(d * 1000);
   }
   check(monotonic, 'position does not decrease between seeks');
-  check(err.length > 500, 'enough checked positions (${err.length})');
+  // The page polls every 5 ms; headless Firefox on a loaded CI runner runs
+  // that timer less often (471, 694, 707 checked positions in three runs on
+  // 2026-10-27; Chrome and Safari about 950). With 300, 15 samples still lie
+  // above the p95.
+  check(err.length > 300, 'enough checked positions (${err.length})');
   if (err.isNotEmpty) {
     log(
       'position error ms: p50 ${pct(err, .5).toStringAsFixed(1)} '
