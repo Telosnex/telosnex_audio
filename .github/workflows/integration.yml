@@ -7,9 +7,9 @@ name: Integration
 # every platform (Dart API tests on the VM, the app build through the
 # native-assets hook, and the engine cases of test/engine_cases.dart inside
 # the app: desktop, iOS simulator, Android emulator); and the web engine
-# (wasm core tests in Chrome, the real-time AudioWorklet check in Chrome and
-# Firefox, on a wasm built from these sources in the image of the release
-# workflow).
+# (wasm core tests in Chrome, the real-time AudioWorklet check in Chrome,
+# Firefox and Safari, on a wasm built from these sources in the image of the
+# release workflow).
 on:
   push:
     branches: [main, 'ci/**']
@@ -437,9 +437,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: Web macOS ARM64 Chrome, browser: chrome }
-          - { name: Web macOS ARM64 Firefox, browser: firefox }
-    runs-on: macos-15
+          - { name: Web macOS ARM64 Chrome, browser: chrome, runner: macos-15 }
+          - { name: Web macOS ARM64 Firefox, browser: firefox, runner: macos-15 }
+          # macos-26 as image_ffmpeg's Safari job (Safari 26).
+          - { name: Web macOS ARM64 Safari, browser: safari, runner: macos-26 }
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -459,11 +461,15 @@ jobs:
         if: matrix.browser == 'firefox'
         run: test -x /Applications/Firefox.app/Contents/MacOS/firefox || brew install --cask firefox
 
+      - name: Safari remote automation
+        if: matrix.browser == 'safari'
+        run: sudo safaridriver --enable
+
       # Chrome: the engine cases (wasm core, storage worker, ?v= on every
       # file), then the real-time AudioWorklet check (ADR step 9 gate), JS and
-      # Wasm. Firefox: the AudioWorklet check, JS only (flutter test runs
-      # browser tests only in Chrome; Flutter runs dart2wasm builds only in
-      # Chromium). Safari is not here yet: its AudioContext needs a click on
-      # Start, which a safaridriver session could script.
+      # Wasm. Firefox and Safari: the AudioWorklet check, JS only (flutter
+      # test runs browser tests only in Chrome; Flutter runs dart2wasm builds
+      # only in Chromium). Safari runs through safaridriver with
+      # webkit:alwaysAllowAutoplay (no click) and WebKit's mock microphones.
       - name: Web tests
         run: dart tool/kiln/test_web.dart --from "$RUNNER_TEMP/web" --browser ${{ matrix.browser }}
