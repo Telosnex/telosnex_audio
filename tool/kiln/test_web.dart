@@ -16,6 +16,14 @@
 import 'dart:io';
 
 Future<void> main(List<String> args) async {
+  try {
+    await _main(args);
+  } on _Failed catch (e) {
+    exit(e.code);
+  }
+}
+
+Future<void> _main(List<String> args) async {
   String? from;
   var browser = 'chrome';
   for (var i = 0; i < args.length; i++) {
@@ -103,6 +111,12 @@ Future<void> _run(String exe, List<String> args, {String? cwd}) async {
   final code = await process.exitCode;
   if (code != 0) {
     stderr.writeln('$exe ${args.first} failed with exit code $code.');
-    exit(code);
+    // Thrown, not exit(): the finally in main restores example/pubspec.yaml.
+    throw _Failed(code);
   }
+}
+
+final class _Failed implements Exception {
+  _Failed(this.code);
+  final int code;
 }
