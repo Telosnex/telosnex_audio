@@ -169,3 +169,23 @@ Status (2026-10-05):
   9.8-10.7 ms in Firefox and 10.0-10.2 ms in Safari. Rate, window/far seek, idle/resume,
   capture, and devices pass. Flutter uses its JavaScript shell in these browsers, while
   the Track core still runs WebAssembly in the AudioWorklet. Chrome core: 14 tests pass.
+
+## CI platform devices (2026-10-27)
+
+- Hosted runners and audio: macOS has an "Apple Virtual Sound Device" (in and out). Windows has
+  no endpoints; tool/ci/install_vbcable.ps1 installs VB-CABLE (Pack 45, x64 and ARM64, silent,
+  no reboot) and sets the user's microphone consent to Allow (unset on the runners; WASAPI
+  capture failed with -4 without it). Linux runners run an Azure kernel with CONFIG_SOUND
+  unset: no snd-aloop or snd-dummy, shipped or buildable. PulseAudio null sinks work.
+- ALSA in CI: tool/ci/alsa_vm.sh boots Ubuntu's generic kernel with virtme-ng under KVM (x64
+  runners only; ARM64 runners have no /dev/kvm) over the runner's file system, loads
+  snd-aloop, and points the default PCM at the loop. Two traps: alsa-lib rereads its config
+  on every device scan (1-10 s per selection over 9p; copied to tmpfs), and the runner's
+  pulse.conf hook makes each scan look for a PulseAudio server (hooks removed in the guest).
+- Safari: safaridriver with webkit:alwaysAllowAutoplay needs no click, and automation
+  sessions give getUserMedia mock microphones, so the whole web check runs unattended.
+- echo_probe now fails (exit 1) on a failed request, an engine error, a second without
+  capture, a track that does not move, or an unanswered route selection. Levels are
+  informational on virtual devices.
+- iOS simulator on macos-26: launch-to-VM-service took 40-80 s when it worked, and passed
+  150 s in two of three attempts in one run; connect-seconds 600 and a 90 min job, as fonnx.
