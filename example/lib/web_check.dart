@@ -321,7 +321,12 @@ Future<void> idleStop(AudioEngine engine) async {
 // the asked rate.
 Future<void> captureCheck(AudioEngine engine) async {
   final frames = <CaptureFrame>[];
-  final sub = engine.capture.listen(frames.add);
+  final clock = Stopwatch()..start();
+  Duration? first;
+  final sub = engine.capture.listen((f) {
+    first ??= clock.elapsed;
+    frames.add(f);
+  });
   try {
     await engine.startCapture(const CaptureConfig(sampleRate: 24000));
   } catch (e) {
@@ -331,15 +336,26 @@ Future<void> captureCheck(AudioEngine engine) async {
   }
   await Future<void>.delayed(const Duration(seconds: 2));
   await engine.stopCapture();
+  final stopped = clock.elapsed;
   await sub.cancel();
   final samples = frames.fold<int>(0, (a, f) => a + f.pcm.length);
   final ms = samples / 24;
+  // The rate is checked from the first frame: getUserMedia can take 500 ms
+  // to start on a loaded CI runner (headless Chrome, 2026-10-27: 1500 ms in
+  // the 2 s), which is the startup check's business, not the rate's.
+  final startMs = first?.inMilliseconds ?? -1;
+  final spanMs = first == null ? 0 : (stopped - first!).inMilliseconds;
   log(
-    'capture: ${frames.length} frames, ${ms.round()} ms, '
+    'capture: ${frames.length} frames, ${ms.round()} ms in the $spanMs ms '
+    'after the first frame (at $startMs ms), '
     'inputs ${engine.inputs.map((d) => d.name).join(', ')}',
   );
   check(frames.every((f) => f.sampleRate == 24000), 'capture rate 24 kHz');
-  check(ms > 1500 && ms < 2300, 'capture delivers about 2 s in 2 s');
+  check(startMs >= 0 && startMs < 1200, 'capture starts within 1.2 s');
+  check(
+    spanMs > 0 && ms > spanMs * 0.8 && ms < spanMs * 1.15 + 100,
+    'capture delivers real time after its first frame',
+  );
   var ordered = true;
   for (var i = 1; i < frames.length; i++) {
     final d = frames[i].capturedAtNs - frames[i - 1].capturedAtNs;
