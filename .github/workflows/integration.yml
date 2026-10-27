@@ -378,14 +378,22 @@ jobs:
         working-directory: example
         run: flutter pub get
 
+      # As ios-flutter-test asks: the Xcode build (WebRTC through the hook)
+      # is silent for minutes, and done here, the build in flutter test is
+      # incremental. Without it, flutter test's xcodebuild -showBuildSettings
+      # timed out twice (60 s each) on the cold project and the attempt
+      # failed (run of d15c193, 2026-10-27).
+      - name: Build the app
+        working-directory: example
+        run: flutter build ios --simulator --debug -t integration_test/engine_test.dart
+
       - uses: Telosnex/telosnex_ci_tools/actions/ios-simulator-boot@ac661f93e2b65b203d12956ecc215da3b8ddf871 # main
 
       - uses: Telosnex/telosnex_ci_tools/actions/ios-flutter-test@ac661f93e2b65b203d12956ecc215da3b8ddf871 # main
         with:
           working-directory: example
           target: integration_test/engine_test.dart
-          # The first Xcode build compiles WebRTC through the hook and
-          # prints nothing meanwhile.
+          # Its Xcode build is incremental after "Build the app".
           idle-minutes: '15'
           # Launch to VM service took 40 s when it worked, and two of three
           # attempts in a run passed 150 s (the default) without it
