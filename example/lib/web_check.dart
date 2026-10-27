@@ -255,8 +255,22 @@ Future<void> run(AudioEngine engine) async {
   var monotonic = true;
   var lastPos = -1;
   var lastNs = 0;
+  // Where an event lies: ms after play, and after the last seek.
+  String when(int ns) {
+    final since = seeks.where((x) => x <= ns).toList();
+    final play = samples.isEmpty ? ns : samples.first.$1;
+    return '${((ns - play) / 1e6).round()} ms after play'
+        '${since.isEmpty ? '' : ', ${((ns - since.last) / 1e6).round()} ms after seek ${since.length}'}';
+  }
+
   for (final (ns, pos, status) in samples) {
-    if (lastPos >= 0 && pos < lastPos && !nearSeek(ns)) monotonic = false;
+    if (lastPos >= 0 && pos < lastPos && !nearSeek(ns)) {
+      monotonic = false;
+      log(
+        'position decreased: $lastPos -> $pos frames (${status.name}) '
+        'at ${when(ns)}',
+      );
+    }
     lastPos = pos;
     if (status != TrackStatus.playing || nearSeek(ns)) continue;
     if (ns - lastNs < 9000000) continue; // one sample per block
@@ -303,7 +317,11 @@ Future<void> run(AudioEngine engine) async {
     );
     check(ms >= 0 && ms < 500, 'far seek to $target s plays within 500 ms');
   }
-  final stray = starved.where((ns) => !nearSeek(ns)).length;
+  final strays = starved.where((ns) => !nearSeek(ns)).toList();
+  for (final ns in strays) {
+    log('starved at ${when(ns)}');
+  }
+  final stray = strays.length;
   check(stray == 0, 'no starvation outside seeks ($stray)');
 
   await idleStop(engine);
