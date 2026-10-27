@@ -2,8 +2,9 @@ name: Integration
 
 # Native C++ tests (macOS: plain, ThreadSanitizer, and an x86_64 compile; Linux
 # x64 and arm64; Windows x64, arm64, and an arm64 cross compile) and the
-# platform devices the runners have (macOS virtual sound device: CoreAudio and
-# Apple voice processing; Linux: PulseAudio null sink); the example app on
+# platform devices (macOS virtual sound device: CoreAudio and Apple voice
+# processing; Linux: PulseAudio null sink, and ALSA on snd-aloop in a VM;
+# Windows: VB-CABLE, Core Audio); the example app on
 # every platform (Dart API tests on the VM, the app build through the
 # native-assets hook, and the engine cases of test/engine_cases.dart inside
 # the app: desktop, iOS simulator, Android emulator); and the web engine
@@ -137,12 +138,6 @@ jobs:
       # observation. echo_probe fails as on macOS (a failed request or
       # selection, a second without capture, a track that does not move);
       # the alarm catches a start/stop hang.
-      # Not ALSA: the runners' Azure kernel has no sound card and no
-      # snd-dummy or snd-aloop module (not even in linux-modules-extra), and
-      # the WebRTC ALSA device lists only card devices, so ALSA through the
-      # pulse plugin does not open either (probe, 2026-10-27). A runner with
-      # a sound card or those modules would let `echo_probe --alsa` run here;
-      # ALSA was checked in the Parallels Ubuntu ARM64 VM (IMPL_WORKLOG.md).
       - name: Platform device (PulseAudio null sink)
         run: |
           set -euo pipefail
@@ -152,6 +147,16 @@ jobs:
           pactl set-default-source tsnx_null.monitor
           perl -e 'alarm shift; exec @ARGV' 60 ./build/test/echo_probe --routes --pulse
           perl -e 'alarm shift; exec @ARGV' 60 ./build/test/echo_probe --pulse --clock observe 3
+
+      # ALSA: the runners' kernel has no sound support, so tool/ci/alsa_vm.sh
+      # boots Ubuntu's generic kernel under KVM over this file system and
+      # runs the native tests and echo_probe on snd-aloop there (routes,
+      # play and capture through the loop with clock observation, five
+      # start/stop cycles). x64 only: the ARM64 runners have no /dev/kvm;
+      # the ALSA code is the same on both.
+      - name: Platform device (ALSA on snd-aloop, in a VM)
+        if: matrix.arch == 'x64'
+        run: tool/ci/alsa_vm.sh build/test
 
       - name: Exported symbols are tsnx_* only (ADR D5)
         run: |
