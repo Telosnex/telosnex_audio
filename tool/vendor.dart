@@ -1,7 +1,23 @@
 // Copies the pinned WebRTC, Sonic, and minimp3 sources into third_party/.
 //
 // Usage:
-//   dart tool/vendor.dart [--webrtc-src <gclient src dir>] [--gen-dir <dir>]
+//   dart tool/vendor.dart [--webrtc-src <dir>] [--gen-dir <dir>]
+//
+// --webrtc-src (or TSNX_WEBRTC_SRC) is a git checkout of webrtc-sdk/webrtc
+// that has the pinned commit's objects, with the Chromium third_party
+// repository (at least its objects for third_party_commit) in its
+// third_party/ folder. No gclient sync is needed; shallow clones of the two
+// pinned commits are enough:
+//   git init src && git -C src fetch --depth 1 <webrtc url> <commit>
+//   git init src/third_party &&
+//     git -C src/third_party fetch --depth 1 --filter=blob:none \
+//       <third_party url> <third_party_commit>
+// (Blobs a filtered clone is missing are fetched on demand.)
+//
+// --gen-dir (or TSNX_WEBRTC_GEN_DIR) holds the generated headers of a
+// WebRTC build. Without it, experiments/registered_field_trials.h is
+// generated with python3 from experiments/field_trials.py at the pinned
+// commit, as GN's registered_field_trials_header action does.
 //
 // The WebRTC files come from git objects at the pinned commits, not from the
 // working tree, so local patches in the checkout do not leak in. Headers are
@@ -30,9 +46,9 @@ final _includeRe = RegExp(
 
 Future<void> main(List<String> args) async {
   final root = File.fromUri(Platform.script).parent.parent.path;
-  final home = Platform.environment['HOME'] ?? '';
-  var webrtcSrc = '$home/dev/libwebrtc/build/src';
-  String? genDir;
+  final env = Platform.environment;
+  String? webrtcSrc = env['TSNX_WEBRTC_SRC'];
+  String? genDir = env['TSNX_WEBRTC_GEN_DIR'];
   for (var i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--webrtc-src':
@@ -44,7 +60,13 @@ Future<void> main(List<String> args) async {
         exit(64);
     }
   }
-  genDir ??= '$webrtcSrc/../out-pcm-macos/gen';
+  if (webrtcSrc == null || webrtcSrc.isEmpty) {
+    stderr.writeln(
+      'Give the WebRTC checkout with --webrtc-src <dir> or TSNX_WEBRTC_SRC '
+      '(see the comment at the top of tool/vendor.dart).',
+    );
+    exit(64);
+  }
   final manifest =
       jsonDecode(File('$root/tool/vendor_manifest.json').readAsStringSync())
           as Map<String, dynamic>;
@@ -158,13 +180,17 @@ Future<void> main(List<String> args) async {
       );
   }
   for (final g in generated) {
-    final src = File('$genDir/$g');
-    if (!src.existsSync()) {
-      throw StateError('Generated header missing: ${src.path}');
+    final out = File('${outDir.path}/gen/$g')
+      ..parent.createSync(recursive: true);
+    if (genDir != null && genDir.isNotEmpty) {
+      final src = File('$genDir/$g');
+      if (!src.existsSync()) {
+        throw StateError('Generated header missing: ${src.path}');
+      }
+      src.copySync(out.path);
+    } else {
+      await _generate(main, g, out);
     }
-    src.copySync(
-      (File('${outDir.path}/gen/$g')..parent.createSync(recursive: true)).path,
-    );
   }
 
   // CMake source lists.
@@ -232,6 +258,28 @@ Future<void> main(List<String> args) async {
     for (final u in suspicious) {
       stdout.writeln('  $u');
     }
+  }
+}
+
+/// Writes a generated header with the generator script of the pinned commit.
+Future<void> _generate(_GitTree tree, String header, File out) async {
+  if (header != 'experiments/registered_field_trials.h') {
+    throw StateError(
+      'No generator known for $header; give --gen-dir with a WebRTC build.',
+    );
+  }
+  final tmp = Directory.systemTemp.createTempSync('tsnx_vendor_gen');
+  try {
+    final script = File('${tmp.path}/field_trials.py')
+      ..writeAsBytesSync(await tree.blob('experiments/field_trials.py'));
+    await _run('python3', [
+      script.path,
+      'header',
+      '--output',
+      out.path,
+    ], tmp.path);
+  } finally {
+    tmp.deleteSync(recursive: true);
   }
 }
 
