@@ -360,7 +360,8 @@ jobs:
     # macos-26: the simulators of macos-15 missed the VM service line
     # (telosnex_ci_tools TESTING_WORKLOG.md).
     runs-on: macos-26
-    timeout-minutes: 60
+    # Simulator creation can retry for minutes, then up to three attempts.
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
@@ -386,6 +387,10 @@ jobs:
           # The first Xcode build compiles WebRTC through the hook and
           # prints nothing meanwhile.
           idle-minutes: '15'
+          # Launch to VM service took 40 s when it worked, and two of three
+          # attempts in a run passed 150 s (the default) without it
+          # (2026-10-27); fonnx uses 600 s.
+          connect-seconds: '600'
 
       # The simulator log, the flutter test output and stall screenshots of
       # each attempt (ios-flutter-test writes them there).
