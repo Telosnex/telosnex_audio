@@ -14,17 +14,25 @@ set -euo pipefail
 build=$(cd "$1" && pwd)
 work=${RUNNER_TEMP:-/tmp}/alsa_vm
 mkdir -p "$work"
+# APT_ARCHIVES: a package directory kept between runs (actions/cache).
+debs=${APT_ARCHIVES:-$work/debs}
+mkdir -p "$debs/partial"
 
 # The generic kernel and its modules, unpacked (not installed: installing
 # linux-image-generic pulls linux-firmware and rebuilds initramfs and grub,
 # 7 minutes on a runner, none of which virtme-ng needs).
 if ! command -v vng > /dev/null; then
-  sudo apt-get install -y -q virtme-ng
+  sudo apt-get install -y -q --no-install-recommends -o Dir::Cache::Archives="$debs" \
+    virtme-ng qemu-system-x86
 fi
 release=$(apt-cache depends linux-image-generic | awk '/Depends: linux-image-[0-9]/ { sub(/.*linux-image-/, ""); print; exit }')
 if [[ ! -e "/boot/vmlinuz-$release" ]]; then
-  (cd "$work" && apt-get download -q "linux-image-unsigned-$release" "linux-modules-$release" "linux-modules-extra-$release")
-  for deb in "$work"/linux-*.deb; do sudo dpkg -x "$deb" /; done
+  for pkg in "linux-image-unsigned-$release" "linux-modules-$release" "linux-modules-extra-$release"; do
+    if ! compgen -G "$debs/${pkg}_*.deb" > /dev/null; then
+      (cd "$debs" && apt-get download -q "$pkg")
+    fi
+    for deb in "$debs/${pkg}"_*.deb; do sudo dpkg -x "$deb" /; done
+  done
   sudo depmod -a "$release"
 fi
 sudo chmod a+r "/boot/vmlinuz-$release"

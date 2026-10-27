@@ -111,7 +111,7 @@ jobs:
             arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
@@ -119,12 +119,28 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
+      - name: Package cache key
+        id: apt
+        run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+
+      # Downloaded packages kept between runs (with the ALSA VM's kernel and
+      # QEMU): the Azure mirror sometimes serves at 50 kB/s, which made one
+      # install take 20 min and timed the job out (2026-10-27).
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-debs/*.deb
+          key: apt-debs-${{ runner.arch }}-${{ steps.apt.outputs.month }}-${{ hashFiles('.github/workflows/integration.yml', 'tool/ci/alsa_vm.sh') }}
+          restore-keys: apt-debs-${{ runner.arch }}-
+
       - name: Install build tools and audio headers
+        env:
+          APT_ARCHIVES: ${{ runner.temp }}/apt-debs
         run: |
           set -euo pipefail
+          mkdir -p "$APT_ARCHIVES/partial"
           sudo apt-get update -q
-          sudo apt-get install -y -q cmake ninja-build g++ libasound2-dev libpulse-dev \
-            pulseaudio pulseaudio-utils
+          sudo apt-get install -y -q --no-install-recommends -o Dir::Cache::Archives="$APT_ARCHIVES" \
+            cmake ninja-build g++ libasound2-dev libpulse-dev pulseaudio pulseaudio-utils
 
       - name: Build and run native tests
         run: |
@@ -156,6 +172,8 @@ jobs:
       # the ALSA code is the same on both.
       - name: Platform device (ALSA on snd-aloop, in a VM)
         if: matrix.arch == 'x64'
+        env:
+          APT_ARCHIVES: ${{ runner.temp }}/apt-debs
         run: tool/ci/alsa_vm.sh build/test
 
       - name: Exported symbols are tsnx_* only (ADR D5)
@@ -379,8 +397,8 @@ jobs:
         run: flutter pub get
 
       # As ios-flutter-test asks: the Xcode build (WebRTC through the hook)
-      # is silent for minutes, and done here, the build in flutter test is
-      # incremental. Without it, flutter test's xcodebuild -showBuildSettings
+      # is silent for minutes; after this, flutter test's build (its own
+      # DerivedData) reuses the hook output and takes about 2 min. Without it, flutter test's xcodebuild -showBuildSettings
       # timed out twice (60 s each) on the cold project and the attempt
       # failed (run of d15c193, 2026-10-27).
       - name: Build the app
@@ -393,7 +411,7 @@ jobs:
         with:
           working-directory: example
           target: integration_test/engine_test.dart
-          # Its Xcode build is incremental after "Build the app".
+          # Its Xcode build reuses the hook output of "Build the app".
           idle-minutes: '15'
           # Launch to VM service took 40 s when it worked, and two of three
           # attempts in a run passed 150 s (the default) without it
