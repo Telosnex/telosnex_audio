@@ -339,26 +339,31 @@ Future<void> captureCheck(AudioEngine engine) async {
     return;
   }
   await Future<void>.delayed(const Duration(seconds: 2));
+  final stopNs = engine.nowNs();
   await engine.stopCapture();
-  final stopped = clock.elapsed;
   await sub.cancel();
   final samples = frames.fold<int>(0, (a, f) => a + f.pcm.length);
   final ms = samples / 24;
-  // The rate is checked from the first frame: getUserMedia can take 500 ms
-  // to start on a loaded CI runner (headless Chrome, 2026-10-27: 1500 ms in
-  // the 2 s), which is the startup check's business, not the rate's.
+  // Delivery is measured on the audio clock (nowNs and capturedAtNs), not
+  // the wall clock: headless Chrome's context clock ran at 0.7x wall time
+  // on a loaded CI runner (1330 ms of capture in 1879 wall ms, timestamps
+  // still 10 ms apart; 2026-10-27), which the engine does not control.
   final startMs = first?.inMilliseconds ?? -1;
-  final spanMs = first == null ? 0 : (stopped - first!).inMilliseconds;
+  final spanMs = frames.isEmpty
+      ? 0.0
+      : (stopNs - frames.first.capturedAtNs) / 1e6;
   log(
-    'capture: ${frames.length} frames, ${ms.round()} ms in the $spanMs ms '
-    'after the first frame (at $startMs ms), '
+    'capture: ${frames.length} frames, ${ms.round()} ms; audio clock '
+    '${spanMs.round()} ms from the first frame to stop; first frame '
+    'after $startMs wall ms; '
     'inputs ${engine.inputs.map((d) => d.name).join(', ')}',
   );
   check(frames.every((f) => f.sampleRate == 24000), 'capture rate 24 kHz');
   check(startMs >= 0 && startMs < 1200, 'capture starts within 1.2 s');
+  // Slack: output latency in nowNs and the blocks still in flight at stop.
   check(
-    spanMs > 0 && ms > spanMs * 0.8 && ms < spanMs * 1.15 + 100,
-    'capture delivers real time after its first frame',
+    spanMs > 500 && (ms - spanMs).abs() < spanMs * 0.1 + 150,
+    'capture delivers the audio clock\'s time',
   );
   var ordered = true;
   for (var i = 1; i < frames.length; i++) {
