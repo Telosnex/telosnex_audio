@@ -407,6 +407,10 @@ jobs:
 
       - uses: Telosnex/telosnex_ci_tools/actions/ios-simulator-boot@ac661f93e2b65b203d12956ecc215da3b8ddf871 # main
 
+      # Runs until the job ends; its samples go up with the simulator logs.
+      - name: Sample the app's stacks while it runs
+        run: tool/ci/ios_sample_runner.sh "$RUNNER_TEMP/ios-flutter-test/samples" > /dev/null 2>&1 &
+
       - uses: Telosnex/telosnex_ci_tools/actions/ios-flutter-test@ac661f93e2b65b203d12956ecc215da3b8ddf871 # main
         with:
           working-directory: example
