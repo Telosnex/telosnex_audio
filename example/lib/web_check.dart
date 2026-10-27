@@ -104,16 +104,22 @@ class _CheckPageState extends State<CheckPage> {
   Future<void> open() async {
     final e = await TelosnexAudio.open();
     engine = e;
-    // Browsers that allow autoplay (the CI flags and prefs) run at once, or
-    // within seconds on a loaded runner; the others wait for a click.
+    // Browsers that allow autoplay (the CI flags and prefs) resume without a
+    // gesture; the others leave resume() pending until a click. Waiting for
+    // the context to start by itself was not enough: on CI, headless Chrome
+    // (Wasm build) and Firefox stayed suspended for 10 s (2026-10-27).
     log('opened; context ${debugContextState(e)}');
-    for (var i = 0; i < 200 && debugContextState(e) != 'running'; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+    try {
+      await debugResume(e).timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      // Pending: the browser needs a gesture.
     }
     if (debugContextState(e) == 'running') {
       await start();
     } else {
-      log('context ${debugContextState(e)} after 10 s: waiting for a click');
+      log(
+        'context ${debugContextState(e)} after resume(): waiting for a click',
+      );
       setState(() => status = 'click Start (the browser needs a gesture)');
     }
   }
