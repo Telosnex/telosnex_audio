@@ -26,6 +26,20 @@ final lines = <String>[];
 void log(String s) {
   lines.add(s);
   debugPrint('TSNX_WEB: $s');
+  // Each line also goes to the runner as it happens, so a run that never
+  // reports shows how far it got.
+  final url = Uri.base.queryParameters['report'];
+  if (url != null) {
+    unawaited(
+      web.window
+          .fetch(
+            '$url/line'.toJS,
+            web.RequestInit(method: 'POST', body: s.toJS),
+          )
+          .toDart
+          .then((_) {}, onError: (Object _) {}),
+    );
+  }
 }
 
 final failures = <String>[];
@@ -90,13 +104,22 @@ class _CheckPageState extends State<CheckPage> {
   Future<void> open() async {
     final e = await TelosnexAudio.open();
     engine = e;
-    // Chrome with --autoplay-policy=no-user-gesture-required runs at once.
-    for (var i = 0; i < 20 && debugContextState(e) != 'running'; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+    // Browsers that allow autoplay (the CI flags and prefs) resume without a
+    // gesture; the others leave resume() pending until a click. Waiting for
+    // the context to start by itself was not enough: on CI, headless Chrome
+    // (Wasm build) and Firefox stayed suspended for 10 s (2026-10-27).
+    log('opened; context ${debugContextState(e)}');
+    try {
+      await debugResume(e).timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      // Pending: the browser needs a gesture.
     }
     if (debugContextState(e) == 'running') {
       await start();
     } else {
+      log(
+        'context ${debugContextState(e)} after resume(): waiting for a click',
+      );
       setState(() => status = 'click Start (the browser needs a gesture)');
     }
   }
@@ -238,8 +261,22 @@ Future<void> run(AudioEngine engine) async {
   var monotonic = true;
   var lastPos = -1;
   var lastNs = 0;
+  // Where an event lies: ms after play, and after the last seek.
+  String when(int ns) {
+    final since = seeks.where((x) => x <= ns).toList();
+    final play = samples.isEmpty ? ns : samples.first.$1;
+    return '${((ns - play) / 1e6).round()} ms after play'
+        '${since.isEmpty ? '' : ', ${((ns - since.last) / 1e6).round()} ms after seek ${since.length}'}';
+  }
+
   for (final (ns, pos, status) in samples) {
-    if (lastPos >= 0 && pos < lastPos && !nearSeek(ns)) monotonic = false;
+    if (lastPos >= 0 && pos < lastPos && !nearSeek(ns)) {
+      monotonic = false;
+      log(
+        'position decreased: $lastPos -> $pos frames (${status.name}) '
+        'at ${when(ns)}',
+      );
+    }
     lastPos = pos;
     if (status != TrackStatus.playing || nearSeek(ns)) continue;
     if (ns - lastNs < 9000000) continue; // one sample per block
@@ -256,7 +293,11 @@ Future<void> run(AudioEngine engine) async {
     err.add(d * 1000);
   }
   check(monotonic, 'position does not decrease between seeks');
-  check(err.length > 500, 'enough checked positions (${err.length})');
+  // The page polls every 5 ms; headless Firefox on a loaded CI runner runs
+  // that timer less often (471, 694, 707 checked positions in three runs on
+  // 2026-10-27; Chrome and Safari about 950). With 300, 15 samples still lie
+  // above the p95.
+  check(err.length > 300, 'enough checked positions (${err.length})');
   if (err.isNotEmpty) {
     log(
       'position error ms: p50 ${pct(err, .5).toStringAsFixed(1)} '
@@ -282,7 +323,11 @@ Future<void> run(AudioEngine engine) async {
     );
     check(ms >= 0 && ms < 500, 'far seek to $target s plays within 500 ms');
   }
-  final stray = starved.where((ns) => !nearSeek(ns)).length;
+  final strays = starved.where((ns) => !nearSeek(ns)).toList();
+  for (final ns in strays) {
+    log('starved at ${when(ns)}');
+  }
+  final stray = strays.length;
   check(stray == 0, 'no starvation outside seeks ($stray)');
 
   await idleStop(engine);
@@ -321,7 +366,12 @@ Future<void> idleStop(AudioEngine engine) async {
 // the asked rate.
 Future<void> captureCheck(AudioEngine engine) async {
   final frames = <CaptureFrame>[];
-  final sub = engine.capture.listen(frames.add);
+  final clock = Stopwatch()..start();
+  Duration? first;
+  final sub = engine.capture.listen((f) {
+    first ??= clock.elapsed;
+    frames.add(f);
+  });
   try {
     await engine.startCapture(const CaptureConfig(sampleRate: 24000));
   } catch (e) {
@@ -330,16 +380,32 @@ Future<void> captureCheck(AudioEngine engine) async {
     return;
   }
   await Future<void>.delayed(const Duration(seconds: 2));
+  final stopNs = engine.nowNs();
   await engine.stopCapture();
   await sub.cancel();
   final samples = frames.fold<int>(0, (a, f) => a + f.pcm.length);
   final ms = samples / 24;
+  // Delivery is measured on the audio clock (nowNs and capturedAtNs), not
+  // the wall clock: headless Chrome's context clock ran at 0.7x wall time
+  // on a loaded CI runner (1330 ms of capture in 1879 wall ms, timestamps
+  // still 10 ms apart; 2026-10-27), which the engine does not control.
+  final startMs = first?.inMilliseconds ?? -1;
+  final spanMs = frames.isEmpty
+      ? 0.0
+      : (stopNs - frames.first.capturedAtNs) / 1e6;
   log(
-    'capture: ${frames.length} frames, ${ms.round()} ms, '
+    'capture: ${frames.length} frames, ${ms.round()} ms; audio clock '
+    '${spanMs.round()} ms from the first frame to stop; first frame '
+    'after $startMs wall ms; '
     'inputs ${engine.inputs.map((d) => d.name).join(', ')}',
   );
   check(frames.every((f) => f.sampleRate == 24000), 'capture rate 24 kHz');
-  check(ms > 1500 && ms < 2300, 'capture delivers about 2 s in 2 s');
+  check(startMs >= 0 && startMs < 1200, 'capture starts within 1.2 s');
+  // Slack: output latency in nowNs and the blocks still in flight at stop.
+  check(
+    spanMs > 500 && (ms - spanMs).abs() < spanMs * 0.1 + 150,
+    'capture delivers the audio clock\'s time',
+  );
   var ordered = true;
   for (var i = 1; i < frames.length; i++) {
     final d = frames[i].capturedAtNs - frames[i - 1].capturedAtNs;

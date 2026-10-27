@@ -5,8 +5,13 @@ Scope: package code through step 9. App migration (steps 5-6) is not done.
 Hardware gates remain open as listed below.
 
 ## Facts
-- WebRTC checkout: ~/dev/libwebrtc/build/src at webrtc-sdk b1800a61db (working tree has fork
-  patches; vendor reads git objects, not the working tree). Chromium third_party a3b630c291f1.
+- WebRTC: webrtc-sdk m144_release 30d5e63ae9 (2026-10-26; was b1800a61db), Chromium third_party
+  a3b630c291f1 (same in DEPS at both). The gclient checkout ~/dev/libwebrtc is gone. vendor.dart needs
+  only git objects: ~/dev/webrtc-vendor-src/src (depth-1 fetch of the pinned commits) with
+  third_party/ (depth 1, --filter=blob:none). Run: TSNX_WEBRTC_SRC=~/dev/webrtc-vendor-src/src
+  dart tool/vendor.dart. Re-checked: at the old pin it reproduced the tree minus the 6 local patches.
+  ~/dev/webrtc is a full webrtc-sdk clone (history, m150_release); ~/dev/libwebrtc-pcm-playout is a
+  fresh clone of Telosnex/libwebrtc telosnex/m144-pcm-playout (the old folder was empty; deleted).
 - Spike list (443 TUs): /tmp/wrtc/srcs.txt. Spike gen headers: ~/dev/libwebrtc/build/out-pcm-macos/gen.
 - Sonic b93885dcb70aae50c6f76b0fe4e0868f029a077e, minimp3 ea99364f61c14656440e8d77e9c233ccf3124633.
 - Fork clock correction: ~/dev/libwebrtc branch telosnex/m144-pcm-playout, src/internal/{drift_servo,hardware_clock_estimator,capture_clock_policy,audio_clock_correction}.
@@ -164,3 +169,25 @@ Status (2026-10-05):
   9.8-10.7 ms in Firefox and 10.0-10.2 ms in Safari. Rate, window/far seek, idle/resume,
   capture, and devices pass. Flutter uses its JavaScript shell in these browsers, while
   the Track core still runs WebAssembly in the AudioWorklet. Chrome core: 14 tests pass.
+
+## CI platform devices (2026-10-27)
+
+- Hosted runners and audio: macOS has an "Apple Virtual Sound Device" (in and out). Windows has
+  no endpoints; tool/ci/install_vbcable.ps1 installs VB-CABLE (Pack 45, x64 and ARM64, silent,
+  no reboot) and sets the user's microphone consent to Allow (unset on the runners; WASAPI
+  capture failed with -4 without it). Linux runners run an Azure kernel with CONFIG_SOUND
+  unset: no snd-aloop or snd-dummy, shipped or buildable. PulseAudio null sinks work.
+- ALSA in CI: tool/ci/alsa_vm.sh boots Ubuntu's generic kernel with virtme-ng under KVM (x64
+  runners only; ARM64 runners have no /dev/kvm) over the runner's file system, loads
+  snd-aloop, and points the default PCM at the loop. Two traps: alsa-lib rereads its config
+  on every device scan (1-10 s per selection over 9p; copied to tmpfs), and the runner's
+  pulse.conf hook makes each scan look for a PulseAudio server (hooks removed in the guest).
+- Safari: safaridriver with webkit:alwaysAllowAutoplay needs no click, and automation
+  sessions give getUserMedia mock microphones, so the whole web check runs unattended.
+- echo_probe now fails (exit 1) on a failed request, an engine error, a second without
+  capture, a track that does not move, or an unanswered route selection. Levels are
+  informational on virtual devices.
+- iOS simulator on macos-26: failed attempts were flutter_tools missing the app's "Dart VM
+  service is listening" line (the app logged it 2 s after launch and sat idle; stack samples).
+  telosnex_ci_tools 9179ea7 ends such an attempt 30 s after our own simulator log has the line,
+  instead of after connect-seconds (600).

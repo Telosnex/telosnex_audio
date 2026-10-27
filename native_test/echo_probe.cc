@@ -35,6 +35,7 @@ static std::vector<uint8_t> ReadFile(const char* path) {
 
 static std::atomic<int> g_done{0};
 static std::atomic<int> g_failed{0};
+static std::atomic<int> g_engine_errors{0};
 
 static void OnNotify(int32_t kind, int32_t id, int64_t value) {
   if (kind == TSNX_NOTIFY_REQUEST_DONE) {
@@ -43,8 +44,10 @@ static void OnNotify(int32_t kind, int32_t id, int64_t value) {
   }
   if (kind == TSNX_NOTIFY_REQUEST_DONE && value != 0)
     std::fprintf(stderr, "request %d failed: %lld\n", id, (long long)value);
-  if (kind == TSNX_NOTIFY_ENGINE_ERROR)
+  if (kind == TSNX_NOTIFY_ENGINE_ERROR) {
+    g_engine_errors.fetch_add(1);
     std::fprintf(stderr, "engine error %lld\n", (long long)value);
+  }
 }
 
 int main(int argc, char** argv) {
@@ -107,6 +110,8 @@ int main(int argc, char** argv) {
   current(1, cid);
   if (routes) {
     int bad = 0;
+    int unanswered = 0;
+    double slowest_ms = 0;
     for (int k = 0; k < 2; ++k) {
       const int n = tsnx_device_count(e, k);
       for (int i = 0; i <= n; ++i) {
@@ -114,19 +119,30 @@ int main(int argc, char** argv) {
         if (i < n) tsnx_device_get(e, k, i, id, sizeof id, name, sizeof name);
         else std::strcpy(id, "default");
         const int before = g_done.load();
+        const auto t0 = std::chrono::steady_clock::now();
         tsnx_device_select(e, k, id, 100 + i);
-        for (int w = 0; w < 500 && g_done.load() == before; ++w)
+        // Opening a device can take about 1 s (snd-aloop in a VM on CI).
+        for (int w = 0; w < 5000 && g_done.load() == before; ++w)
           std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        std::fprintf(stderr, "select %s %s -> ", k ? "in" : "out", id);
+        if (g_done.load() == before) ++unanswered;
+        const double ms = std::chrono::duration<double, std::milli>(
+                              std::chrono::steady_clock::now() - t0)
+                              .count();
+        if (ms > slowest_ms) slowest_ms = ms;
+        std::fprintf(stderr, "select %s %s (%.0f ms) -> ", k ? "in" : "out",
+                     id, ms);
         current(k, cid);
         if (std::strcmp(cid, id) != 0) ++bad;
       }
     }
-    std::fprintf(stderr, "%s: %d mismatches, %d failed requests\n",
-                 bad || g_failed.load() ? "ROUTES FAIL" : "ROUTES PASS", bad,
-                 g_failed.load());
+    const bool fail = bad || unanswered || g_failed.load();
+    std::fprintf(stderr,
+                 "%s: %d mismatches, %d failed requests, %d unanswered in "
+                 "10 s, slowest %.0f ms\n",
+                 fail ? "ROUTES FAIL" : "ROUTES PASS", bad, g_failed.load(),
+                 unanswered, slowest_ms);
     tsnx_engine_close(e);
-    return bad || g_failed.load() ? 1 : 0;
+    return fail ? 1 : 0;
   }
 
   if (device) {
@@ -146,6 +162,10 @@ int main(int argc, char** argv) {
   tsnx_track_set_gain(e, track, gain, 0);
   tsnx_track_play(e, track);
   std::vector<double> supp;
+  // CI fails on these (the levels mean nothing on virtual devices): every
+  // second has capture blocks and the track position moves.
+  int silent_seconds = 0;
+  tsnx_track_state st{};
   tsnx_capture_block buf[64];
   for (int s = 0; s < seconds; ++s) {
     for (int k = 0; k < 10; ++k) {
@@ -154,9 +174,9 @@ int main(int argc, char** argv) {
       }
     }
     blocks = tsnx_engine_take_capture_energy(e, &pre, &post);
+    if (blocks <= 0) ++silent_seconds;
     const double pre_db = 10 * std::log10(pre / (blocks * 480.0) + 1e-9);
     const double post_db = 10 * std::log10(post / (blocks * 480.0) + 1e-9);
-    tsnx_track_state st{};
     tsnx_track_get_state(e, track, &st);
     std::fprintf(stderr,
                  "t=%2ds mic %.1f dB  after APM %.1f dB  removed %.1f dB  "
@@ -183,5 +203,14 @@ int main(int argc, char** argv) {
   }
   tsnx_capture_stop(e, 2);
   tsnx_engine_close(e);
-  return 0;
+  const bool ok = g_failed.load() == 0 && g_engine_errors.load() == 0 &&
+                  silent_seconds == 0 && track >= 0 &&
+                  (st.position > 0 || st.status == 4);
+  std::fprintf(stderr,
+               "%s: %d failed requests, %d engine errors, %d of %d seconds "
+               "without capture, track position %.2f s\n",
+               ok ? "PROBE PASS" : "PROBE FAIL", g_failed.load(),
+               g_engine_errors.load(), silent_seconds, seconds,
+               st.position / 24000.0);
+  return ok ? 0 : 1;
 }

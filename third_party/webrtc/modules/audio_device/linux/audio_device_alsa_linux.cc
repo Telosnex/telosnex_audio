@@ -112,7 +112,9 @@ AudioDeviceLinuxALSA::AudioDeviceLinuxALSA()
       _recording(false),
       _playing(false),
       _recIsInitialized(false),
+      _recIsStopping(false),
       _playIsInitialized(false),
+      _playIsStopping(false),
       _recordingDelay(0),
       _playoutDelay(0),
       _recordingClockStatus(nullptr),
@@ -458,7 +460,7 @@ int32_t AudioDeviceLinuxALSA::StereoRecordingIsAvailable(bool& available) {
     InitRecordingLocked();
   }
   if (recording) {
-    StartRecording();
+    StartRecordingLocked();
   }
 
   return 0;
@@ -518,7 +520,7 @@ int32_t AudioDeviceLinuxALSA::StereoPlayoutIsAvailable(bool& available) {
     InitPlayoutLocked();
   }
   if (playing) {
-    StartPlayout();
+    StartPlayoutLocked();
   }
 
   return 0;
@@ -769,7 +771,7 @@ int32_t AudioDeviceLinuxALSA::InitPlayout() {
 int32_t AudioDeviceLinuxALSA::InitPlayoutLocked() {
   int errVal = 0;
 
-  if (_playing) {
+  if (_playing || _playIsStopping) {
     return -1;
   }
 
@@ -901,7 +903,7 @@ int32_t AudioDeviceLinuxALSA::InitRecording() {
 int32_t AudioDeviceLinuxALSA::InitRecordingLocked() {
   int errVal = 0;
 
-  if (_recording) {
+  if (_recording || _recIsStopping) {
     return -1;
   }
 
@@ -1074,15 +1076,26 @@ int32_t AudioDeviceLinuxALSA::InitRecordingLocked() {
 }
 
 int32_t AudioDeviceLinuxALSA::StartRecording() {
+  MutexLock lock(&mutex_);
+  return StartRecordingLocked();
+}
+
+int32_t AudioDeviceLinuxALSA::StartRecordingLocked() {
+  if (_recIsStopping) {
+    return -1;
+  }
+
   if (!_recIsInitialized) {
+    return -1;
+  }
+
+  if (_handleRecord == nullptr) {
     return -1;
   }
 
   if (_recording) {
     return 0;
   }
-
-  _recording = true;
 
   int errVal = 0;
   _recordingFramesLeft = _recordingFramesIn10MS;
@@ -1093,17 +1106,8 @@ int32_t AudioDeviceLinuxALSA::StartRecording() {
     _recordingBuffer = new int8_t[_recordingBufferSizeIn10MS];
   if (!_recordingBuffer) {
     RTC_LOG(LS_ERROR) << "failed to alloc recording buffer";
-    _recording = false;
     return -1;
   }
-  // RECORDING
-  _ptrThreadRec = PlatformThread::SpawnJoinable(
-      [this] {
-        while (RecThreadProcess()) {
-        }
-      },
-      "webrtc_audio_module_capture_thread",
-      ThreadAttributes().SetPriority(ThreadPriority::kRealtime));
 
   errVal = LATE(snd_pcm_prepare)(_handleRecord);
   if (errVal < 0) {
@@ -1121,10 +1125,24 @@ int32_t AudioDeviceLinuxALSA::StartRecording() {
     if (errVal < 0) {
       RTC_LOG(LS_ERROR) << "capture snd_pcm_start 2nd try err: "
                         << LATE(snd_strerror)(errVal);
-      StopRecording();
+      StopRecordingLocked();
       return -1;
     }
   }
+
+  _recording = true;
+
+  // RECORDING
+  const size_t recording_buffer_size =
+      static_cast<size_t>(_recordingBufferSizeIn10MS);
+  _ptrThreadRec = PlatformThread::SpawnJoinable(
+      [this, recording_buffer_size] {
+        std::vector<int8_t> buffer(recording_buffer_size);
+        while (RecThreadProcess(buffer.data())) {
+        }
+      },
+      "webrtc_audio_module_capture_thread",
+      ThreadAttributes().SetPriority(ThreadPriority::kRealtime));
 
   return 0;
 }
@@ -1135,21 +1153,28 @@ int32_t AudioDeviceLinuxALSA::StopRecording() {
 }
 
 int32_t AudioDeviceLinuxALSA::StopRecordingLocked() {
+  if (_recIsStopping) {
+    return 0;
+  }
+
   if (!_recIsInitialized) {
+    _recording = false;
     return 0;
   }
 
   if (_handleRecord == nullptr) {
+    _recIsInitialized = false;
+    _recording = false;
     return -1;
   }
 
   // Make sure we don't start recording (it's asynchronous).
   _recIsInitialized = false;
   _recording = false;
+  _recIsStopping = true;
 
-  // The audio thread can already be waiting for mutex_. Joining it while
-  // holding that mutex deadlocks shutdown. State is false and handles remain
-  // valid while the final iteration drains.
+  // The capture thread can reacquire mutex_ after DeliverRecordedData().
+  // Join it without holding the mutex to avoid a stop/delivery deadlock.
   mutex_.Unlock();
   _ptrThreadRec.Finalize();
   mutex_.Lock();
@@ -1160,11 +1185,13 @@ int32_t AudioDeviceLinuxALSA::StopRecordingLocked() {
     _recordingBuffer = nullptr;
   }
 
+  int32_t result = 0;
+
   // Stop and close pcm recording device.
   int errVal = LATE(snd_pcm_drop)(_handleRecord);
   if (errVal < 0) {
     RTC_LOG(LS_ERROR) << "Error stop recording: " << LATE(snd_strerror)(errVal);
-    return -1;
+    result = -1;
   }
 
   if (_recordingClockStatus) {
@@ -1175,8 +1202,11 @@ int32_t AudioDeviceLinuxALSA::StopRecordingLocked() {
   if (errVal < 0) {
     RTC_LOG(LS_ERROR) << "Error closing record sound device, error: "
                       << LATE(snd_strerror)(errVal);
-    return -1;
+    result = -1;
   }
+  // Null the handle regardless: on close failure the handle is in an
+  // undefined state and not safe to reuse.
+  _handleRecord = nullptr;
 
   // Check if we have muted and unmute if so.
   bool muteEnabled = false;
@@ -1185,9 +1215,8 @@ int32_t AudioDeviceLinuxALSA::StopRecordingLocked() {
     SetMicrophoneMute(false);
   }
 
-  // set the pcm input handle to NULL
-  _handleRecord = nullptr;
-  return 0;
+  _recIsStopping = false;
+  return result;
 }
 
 bool AudioDeviceLinuxALSA::RecordingIsInitialized() const {
@@ -1203,7 +1232,20 @@ bool AudioDeviceLinuxALSA::PlayoutIsInitialized() const {
 }
 
 int32_t AudioDeviceLinuxALSA::StartPlayout() {
+  MutexLock lock(&mutex_);
+  return StartPlayoutLocked();
+}
+
+int32_t AudioDeviceLinuxALSA::StartPlayoutLocked() {
+  if (_playIsStopping) {
+    return -1;
+  }
+
   if (!_playIsInitialized) {
+    return -1;
+  }
+
+  if (_handlePlayout == nullptr) {
     return -1;
   }
 
@@ -1211,17 +1253,24 @@ int32_t AudioDeviceLinuxALSA::StartPlayout() {
     return 0;
   }
 
-  _playing = true;
-
   _playoutFramesLeft = 0;
   ResetHardwareClockObservation(true);
   if (!_playoutBuffer)
     _playoutBuffer = new int8_t[_playoutBufferSizeIn10MS];
   if (!_playoutBuffer) {
     RTC_LOG(LS_ERROR) << "failed to alloc playout buf";
-    _playing = false;
     return -1;
   }
+
+  int errVal = LATE(snd_pcm_prepare)(_handlePlayout);
+  if (errVal < 0) {
+    RTC_LOG(LS_ERROR) << "playout snd_pcm_prepare failed ("
+                      << LATE(snd_strerror)(errVal) << ")\n";
+    // just log error
+    // if snd_pcm_open fails will return -1
+  }
+
+  _playing = true;
 
   // PLAYOUT
   _ptrThreadPlay = PlatformThread::SpawnJoinable(
@@ -1232,14 +1281,6 @@ int32_t AudioDeviceLinuxALSA::StartPlayout() {
       "webrtc_audio_module_play_thread",
       ThreadAttributes().SetPriority(ThreadPriority::kRealtime));
 
-  int errVal = LATE(snd_pcm_prepare)(_handlePlayout);
-  if (errVal < 0) {
-    RTC_LOG(LS_ERROR) << "playout snd_pcm_prepare failed ("
-                      << LATE(snd_strerror)(errVal) << ")\n";
-    // just log error
-    // if snd_pcm_open fails will return -1
-  }
-
   return 0;
 }
 
@@ -1249,19 +1290,27 @@ int32_t AudioDeviceLinuxALSA::StopPlayout() {
 }
 
 int32_t AudioDeviceLinuxALSA::StopPlayoutLocked() {
+  if (_playIsStopping) {
+    return 0;
+  }
+
   if (!_playIsInitialized) {
+    _playing = false;
     return 0;
   }
 
   if (_handlePlayout == nullptr) {
+    _playIsInitialized = false;
+    _playing = false;
     return -1;
   }
 
+  _playIsInitialized = false;
   _playing = false;
+  _playIsStopping = true;
 
-  // The audio thread can already be waiting for mutex_. Joining it while
-  // holding that mutex deadlocks shutdown. State is false and handles remain
-  // valid while the final iteration drains.
+  // The playout thread can reacquire mutex_ after RequestPlayoutData().
+  // Join it without holding the mutex to avoid a stop/playout deadlock.
   mutex_.Unlock();
   _ptrThreadPlay.Finalize();
   mutex_.Lock();
@@ -1270,10 +1319,13 @@ int32_t AudioDeviceLinuxALSA::StopPlayoutLocked() {
   delete[] _playoutBuffer;
   _playoutBuffer = nullptr;
 
+  int32_t result = 0;
+
   // stop and close pcm playout device
   int errVal = LATE(snd_pcm_drop)(_handlePlayout);
   if (errVal < 0) {
     RTC_LOG(LS_ERROR) << "Error stop playing: " << LATE(snd_strerror)(errVal);
+    result = -1;
   }
 
   if (_playoutClockStatus) {
@@ -1281,16 +1333,18 @@ int32_t AudioDeviceLinuxALSA::StopPlayoutLocked() {
     _playoutClockStatus = nullptr;
   }
   errVal = LATE(snd_pcm_close)(_handlePlayout);
-  if (errVal < 0)
+  if (errVal < 0) {
     RTC_LOG(LS_ERROR) << "Error closing playout sound device, error: "
                       << LATE(snd_strerror)(errVal);
-
-  // set the pcm input handle to NULL
-  _playIsInitialized = false;
+    result = -1;
+  }
+  // Null the handle regardless: on close failure the handle is in an
+  // undefined state and not safe to reuse.
   _handlePlayout = nullptr;
   RTC_LOG(LS_VERBOSE) << "handle_playout is now set to NULL";
 
-  return 0;
+  _playIsStopping = false;
+  return result;
 }
 
 int32_t AudioDeviceLinuxALSA::PlayoutDelay(uint16_t& delayMS) const {
@@ -1617,14 +1671,16 @@ void AudioDeviceLinuxALSA::DeliverHardwareClockObservation(bool playout) {
 // ============================================================================
 
 bool AudioDeviceLinuxALSA::PlayThreadProcess() {
-  if (!_playing)
-    return false;
-
   int err;
   snd_pcm_sframes_t frames;
   snd_pcm_sframes_t avail_frames;
 
   Lock();
+  if (!_playing || _handlePlayout == nullptr) {
+    UnLock();
+    return false;
+  }
+
   // return a positive number of frames ready otherwise a negative error code
   avail_frames = LATE(snd_pcm_avail_update)(_handlePlayout);
   if (avail_frames < 0) {
@@ -1649,6 +1705,10 @@ bool AudioDeviceLinuxALSA::PlayThreadProcess() {
     UnLock();
     _ptrAudioBuffer->RequestPlayoutData(_playoutFramesIn10MS);
     Lock();
+    if (!_playing || _handlePlayout == nullptr) {
+      UnLock();
+      return false;
+    }
 
     _playoutFramesLeft = _ptrAudioBuffer->GetPlayoutData(_playoutBuffer);
     RTC_DCHECK_EQ(_playoutFramesLeft, _playoutFramesIn10MS);
@@ -1680,16 +1740,16 @@ bool AudioDeviceLinuxALSA::PlayThreadProcess() {
   return true;
 }
 
-bool AudioDeviceLinuxALSA::RecThreadProcess() {
-  if (!_recording)
-    return false;
-
+bool AudioDeviceLinuxALSA::RecThreadProcess(int8_t* buffer) {
   int err;
   snd_pcm_sframes_t frames;
   snd_pcm_sframes_t avail_frames;
-  std::vector<int8_t> buffer(_recordingBufferSizeIn10MS);
 
   Lock();
+  if (!_recording || _handleRecord == nullptr) {
+    UnLock();
+    return false;
+  }
 
   // return a positive number of frames ready otherwise a negative error code
   avail_frames = LATE(snd_pcm_avail_update)(_handleRecord);
@@ -1713,7 +1773,7 @@ bool AudioDeviceLinuxALSA::RecThreadProcess() {
   if (static_cast<uint32_t>(avail_frames) > _recordingFramesLeft)
     avail_frames = _recordingFramesLeft;
 
-  frames = LATE(snd_pcm_readi)(_handleRecord, buffer.data(),
+  frames = LATE(snd_pcm_readi)(_handleRecord, buffer,
                                avail_frames);  // frames to be written
   if (frames < 0) {
     RTC_LOG(LS_ERROR) << "capture snd_pcm_readi error: "
@@ -1730,8 +1790,8 @@ bool AudioDeviceLinuxALSA::RecThreadProcess() {
         LATE(snd_pcm_frames_to_bytes)(_handleRecord, _recordingFramesLeft);
     int size = LATE(snd_pcm_frames_to_bytes)(_handleRecord, frames);
 
-    memcpy(&_recordingBuffer[_recordingBufferSizeIn10MS - left_size],
-           buffer.data(), size);
+    memcpy(&_recordingBuffer[_recordingBufferSizeIn10MS - left_size], buffer,
+           size);
     _recordingFramesLeft -= frames;
 
     if (!_recordingFramesLeft) {  // buf is full
@@ -1776,6 +1836,10 @@ bool AudioDeviceLinuxALSA::RecThreadProcess() {
       UnLock();
       _ptrAudioBuffer->DeliverRecordedData();
       Lock();
+      if (!_recording) {
+        UnLock();
+        return false;
+      }
     }
   }
 

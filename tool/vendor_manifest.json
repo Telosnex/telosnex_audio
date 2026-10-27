@@ -2,7 +2,7 @@
   "_comment": "Input for tool/vendor.dart. Sources are paths in the WebRTC checkout. Headers are found by following #include lines.",
   "webrtc": {
     "url": "https://github.com/webrtc-sdk/webrtc.git",
-    "commit": "b1800a61db8320af5c14456c13622d8b85b1ed39",
+    "commit": "30d5e63ae91da483e06577b5c35ee91cc5e5c3db",
     "third_party_url": "https://chromium.googlesource.com/chromium/src/third_party",
     "third_party_commit": "a3b630c291f1cf3b711687b1c4be322d3015512e",
     "include_roots": [
@@ -489,6 +489,7 @@
         "modules/audio_device/audio_engine_device.mm"
       ],
       "macos": [
+        "api/audio/create_audio_engine_device_module.mm",
         "modules/audio_device/mac/audio_device_mac.cc",
         "modules/audio_device/mac/audio_device_utils_mac.cc",
         "modules/audio_device/mac/audio_mixer_manager_mac.cc"

@@ -1,10 +1,16 @@
 name: Integration
 
 # Native C++ tests (macOS: plain, ThreadSanitizer, and an x86_64 compile; Linux
-# x64 and arm64; Windows x64 and an arm64 compile), Dart API tests through
-# the native-assets hook, end-to-end example app builds, and the web engine
-# (wasm core tests in Chrome and the real-time AudioWorklet check, on a wasm
-# built from these sources in the image of the release workflow).
+# x64 and arm64; Windows x64, arm64, and an arm64 cross compile) and the
+# platform devices (macOS virtual sound device: CoreAudio and Apple voice
+# processing; Linux: PulseAudio null sink, and ALSA on snd-aloop in a VM;
+# Windows: VB-CABLE, Core Audio); the example app on
+# every platform (Dart API tests on the VM, the app build through the
+# native-assets hook, and the engine cases of test/engine_cases.dart inside
+# the app: desktop, iOS simulator, Android emulator); and the web engine
+# (wasm core tests in Chrome, the real-time AudioWorklet check in Chrome,
+# Firefox and Safari, on a wasm built from these sources in the image of the
+# release workflow).
 on:
   push:
     branches: [main, 'ci/**']
@@ -52,6 +58,23 @@ jobs:
           cmake --build build/test --target tsnx_tests
           ./build/test/native_test/tsnx_tests
 
+      # macOS runners have an "Apple Virtual Sound Device" (in and out), so
+      # both macOS devices open, select each route, play and capture: the
+      # CoreAudio ADM and AudioEngineDevice (AVAudioEngine, Apple voice
+      # processing). echo_probe fails when the engine does not open, a
+      # selection does not show, a request fails, a second has no capture, or
+      # the track does not move; the alarm catches a start/stop hang. Its
+      # levels mean nothing on the virtual device.
+      - name: Platform devices (CoreAudio, Apple voice processing)
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/test -DTSNX_BUILD_PROBE=ON
+          cmake --build build/test --target echo_probe
+          for vp in "" --apple-vp; do
+            perl -e 'alarm shift; exec @ARGV' 60 ./build/test/echo_probe --routes $vp
+            perl -e 'alarm shift; exec @ARGV' 60 ./build/test/echo_probe $vp 3
+          done
+
       - name: ThreadSanitizer
         run: |
           set -euo pipefail
@@ -88,7 +111,7 @@ jobs:
             arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
@@ -96,18 +119,62 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
+      - name: Package cache key
+        id: apt
+        run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+
+      # Downloaded packages kept between runs (with the ALSA VM's kernel and
+      # QEMU): the Azure mirror sometimes serves at 50 kB/s, which made one
+      # install take 20 min and timed the job out (2026-10-27).
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-debs/*.deb
+          key: apt-debs-${{ runner.arch }}-${{ steps.apt.outputs.month }}-${{ hashFiles('.github/workflows/integration.yml', 'tool/ci/alsa_vm.sh') }}
+          restore-keys: apt-debs-${{ runner.arch }}-
+
       - name: Install build tools and audio headers
+        env:
+          APT_ARCHIVES: ${{ runner.temp }}/apt-debs
         run: |
           set -euo pipefail
+          mkdir -p "$APT_ARCHIVES/partial"
           sudo apt-get update -q
-          sudo apt-get install -y -q cmake ninja-build g++ libasound2-dev libpulse-dev
+          sudo apt-get install -y -q --no-install-recommends -o Dir::Cache::Archives="$APT_ARCHIVES" \
+            cmake ninja-build g++ libasound2-dev libpulse-dev pulseaudio pulseaudio-utils
 
       - name: Build and run native tests
         run: |
           set -euo pipefail
-          cmake -S . -B build/test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON
+          cmake -S . -B build/test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON -DTSNX_BUILD_PROBE=ON
           cmake --build build/test
           ./build/test/native_test/tsnx_tests
+
+      # The PulseAudio device on a null sink (its monitor is the mic, so the
+      # APM sees the echo): routes, then 3 s of play and capture with clock
+      # observation. echo_probe fails as on macOS (a failed request or
+      # selection, a second without capture, a track that does not move);
+      # the alarm catches a start/stop hang.
+      - name: Platform device (PulseAudio null sink)
+        run: |
+          set -euo pipefail
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=tsnx_null
+          pactl set-default-sink tsnx_null
+          pactl set-default-source tsnx_null.monitor
+          perl -e 'alarm shift; exec @ARGV' 60 ./build/test/echo_probe --routes --pulse
+          perl -e 'alarm shift; exec @ARGV' 60 ./build/test/echo_probe --pulse --clock observe 3
+
+      # ALSA: the runners' kernel has no sound support, so tool/ci/alsa_vm.sh
+      # boots Ubuntu's generic kernel under KVM over this file system and
+      # runs the native tests and echo_probe on snd-aloop there (routes,
+      # play and capture through the loop with clock observation, five
+      # start/stop cycles). x64 only: the ARM64 runners have no /dev/kvm;
+      # the ALSA code is the same on both.
+      - name: Platform device (ALSA on snd-aloop, in a VM)
+        if: matrix.arch == 'x64'
+        env:
+          APT_ARCHIVES: ${{ runner.temp }}/apt-debs
+        run: tool/ci/alsa_vm.sh build/test
 
       - name: Exported symbols are tsnx_* only (ADR D5)
         run: |
@@ -126,12 +193,17 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
+      # VB-CABLE: the hosted runners have no audio endpoints.
+      - name: Install VB-CABLE
+        shell: pwsh
+        run: tool/ci/install_vbcable.ps1
+
       - name: Build and run native tests (x64), compile arm64
         shell: cmd
         run: |
           for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set VS=%%i
           call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" x64 || exit /b 1
-          cmake -S . -B build\test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DTSNX_TARGET_ARCH=x64 || exit /b 1
+          cmake -S . -B build\test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON -DTSNX_BUILD_PROBE=ON -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DTSNX_TARGET_ARCH=x64 || exit /b 1
           cmake --build build\test || exit /b 1
           build\test\native_test\tsnx_tests.exe || exit /b 1
           dumpbin /exports build\test\telosnex_audio.dll > exports.txt
@@ -141,22 +213,89 @@ jobs:
           cmake -S . -B build\arm64 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DTSNX_TARGET_ARCH=arm64 || exit /b 1
           cmake --build build\arm64 --target telosnex_audio || exit /b 1
 
+      # The Core Audio device on VB-CABLE: routes, 3 s of play and capture
+      # with clock observation, and start/stop cycles. echo_probe fails on a
+      # failed request, an engine error, a second without capture, or a
+      # track that does not move; the alarm catches a hang.
+      - name: Platform device (VB-CABLE)
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe() { perl -e 'alarm shift; exec @ARGV' 60 build/test/echo_probe.exe "$@"; }
+          probe --routes
+          probe --clock observe 3
+          for _ in 1 2 3; do probe 1; done
+
+  native-windows-arm64:
+    name: Windows ARM64 native
+    runs-on: windows-11-arm
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      # VB-CABLE: the hosted runners have no audio endpoints.
+      - name: Install VB-CABLE
+        shell: pwsh
+        run: tool/ci/install_vbcable.ps1
+
+      - name: Build and run native tests (arm64)
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set VS=%%i
+          call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" arm64 || exit /b 1
+          cmake -S . -B build\test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON -DTSNX_BUILD_PROBE=ON -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DTSNX_TARGET_ARCH=arm64 || exit /b 1
+          cmake --build build\test || exit /b 1
+          build\test\native_test\tsnx_tests.exe || exit /b 1
+          dumpbin /exports build\test\telosnex_audio.dll > exports.txt
+          findstr /C:" tsnx_engine_open" exports.txt >nul || exit /b 1
+          findstr /R /C:"^ *[1-9][0-9]*  *[0-9A-F][0-9A-F]*  *[0-9A-F][0-9A-F]*  *[^ ]" exports.txt | findstr /V /C:" tsnx_" && exit /b 1
+          exit /b 0
+
+      # The Core Audio device on VB-CABLE: routes, 3 s of play and capture
+      # with clock observation, and start/stop cycles. echo_probe fails on a
+      # failed request, an engine error, a second without capture, or a
+      # track that does not move; the alarm catches a hang.
+      - name: Platform device (VB-CABLE)
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe() { perl -e 'alarm shift; exec @ARGV' 60 build/test/echo_probe.exe "$@"; }
+          probe --routes
+          probe --clock observe 3
+          for _ in 1 2 3; do probe 1; done
+
   example-desktop:
     name: ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: Linux x64 example build
+          - name: Linux x64 example
             os: linux
             runner: ubuntu-24.04
             check: test -f build/linux/x64/debug/bundle/lib/libtelosnex_audio.so
-          - name: Windows x64 example build
+          - name: Linux ARM64 example
+            os: linux
+            runner: ubuntu-24.04-arm
+            check: test -f build/linux/arm64/debug/bundle/lib/libtelosnex_audio.so
+          - name: macOS ARM64 example
+            os: macos
+            runner: macos-15
+            check: test -d build/macos/Build/Products/Debug/telosnex_audio_example.app/Contents/Frameworks/telosnex_audio.framework
+          - name: Windows x64 example
             os: windows
             runner: windows-2025-vs2026
             check: test -f build/windows/x64/runner/Debug/telosnex_audio.dll
+          - name: Windows ARM64 example
+            os: windows
+            runner: windows-11-arm
+            check: test -f build/windows/arm64/runner/Debug/telosnex_audio.dll
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
@@ -170,17 +309,39 @@ jobs:
           set -euo pipefail
           sudo apt-get update -q
           sudo apt-get install -y -q cmake ninja-build clang pkg-config libgtk-3-dev \
-            libasound2-dev libpulse-dev
+            libasound2-dev libpulse-dev xvfb
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@8e94d6a140db5300d9e5329bc8c2e4dc30154a08 # main
+      - name: Install build tools
+        if: matrix.os == 'macos'
+        run: command -v ninja || brew install ninja
 
-      - name: Example app builds through the hook
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
+
+      # The engine cases with the manual device, and an engine that outlives
+      # its isolate (hot restart), through FFI on the VM.
+      - name: Dart API tests (builds the native asset)
         run: |
           set -euo pipefail
-          cd example
+          flutter pub get
+          flutter test test/engine_test.dart test/isolate_exit_test.dart
+
+      - name: Example app builds through the hook
+        working-directory: example
+        run: |
+          set -euo pipefail
           flutter pub get
           flutter build ${{ matrix.os }} --debug
           ${{ matrix.check }}
+
+      - name: Engine cases in the example app
+        working-directory: example
+        env:
+          DEVICE: ${{ matrix.os }}
+        run: |
+          set -euo pipefail
+          run=(flutter test integration_test/engine_test.dart -d "$DEVICE" -r expanded)
+          if [[ "$RUNNER_OS" == Linux ]]; then run=(xvfb-run -a "${run[@]}"); fi
+          "${run[@]}"
 
   example-android:
     name: Android universal example build
@@ -199,7 +360,7 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q cmake ninja-build
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@8e94d6a140db5300d9e5329bc8c2e4dc30154a08 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
 
       - name: Example app builds through the hook
         run: |
@@ -211,6 +372,106 @@ jobs:
           grep -q 'lib/armeabi-v7a/libtelosnex_audio.so' /tmp/apk.txt
           grep -q 'lib/arm64-v8a/libtelosnex_audio.so' /tmp/apk.txt
           grep -q 'lib/x86_64/libtelosnex_audio.so' /tmp/apk.txt
+
+  ios:
+    name: iOS ARM64 simulator
+    # macos-26: the simulators of macos-15 missed the VM service line
+    # (telosnex_ci_tools TESTING_WORKLOG.md).
+    runs-on: macos-26
+    # Simulator creation can retry for minutes, then up to three attempts.
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install build tools
+        run: command -v ninja || brew install ninja
+
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
+
+      - name: Resolve dependencies
+        working-directory: example
+        run: flutter pub get
+
+      # As ios-flutter-test asks: the Xcode build (WebRTC through the hook)
+      # is silent for minutes; after this, flutter test's build (its own
+      # DerivedData) reuses the hook output and takes about 2 min. Without it, flutter test's xcodebuild -showBuildSettings
+      # timed out twice (60 s each) on the cold project and the attempt
+      # failed (run of d15c193, 2026-10-27).
+      - name: Build the app
+        working-directory: example
+        run: flutter build ios --simulator --debug -t integration_test/engine_test.dart
+
+      - uses: Telosnex/telosnex_ci_tools/actions/ios-simulator-boot@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
+
+      - uses: Telosnex/telosnex_ci_tools/actions/ios-flutter-test@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
+        with:
+          working-directory: example
+          target: integration_test/engine_test.dart
+          # Its Xcode build reuses the hook output of "Build the app".
+          idle-minutes: '15'
+          # Launch to VM service took 40-190 s on passing attempts. When
+          # flutter misses the app's VM service line, missed-line-seconds
+          # (30) ends the attempt early.
+          connect-seconds: '600'
+
+      # The simulator log, the flutter test output and stall screenshots of
+      # each attempt (ios-flutter-test writes them there).
+      - name: Upload the simulator logs
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ios-flutter-test
+          path: ${{ runner.temp }}/ios-flutter-test/
+          retention-days: 7
+
+  android:
+    name: Android x64 emulator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo apt-get install -y -q cmake ninja-build
+
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
+
+      - uses: Telosnex/telosnex_ci_tools/actions/android-emulator@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
+        id: emulator
+        with:
+          api-level: '36'
+
+      # The emulator starts with -no-audio (android-emulator), so only the
+      # manual-device cases run; the AAudio device needs a real phone.
+      - name: Engine cases in the example app
+        working-directory: example
+        env:
+          SERIAL: ${{ steps.emulator.outputs.serial }}
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter test integration_test/engine_test.dart -d "$SERIAL" -r expanded
+
+      - name: Upload the emulator logs
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-emulator-logs
+          path: |
+            ${{ steps.emulator.outputs.log }}
+            ${{ steps.emulator.outputs.logcat }}
+          retention-days: 7
 
   web-build:
     name: Web files
@@ -244,9 +505,17 @@ jobs:
           retention-days: 7
 
   web:
-    name: Web macOS ARM64 Chrome
+    name: ${{ matrix.name }}
     needs: web-build
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Web macOS ARM64 Chrome, browser: chrome, runner: macos-15 }
+          - { name: Web macOS ARM64 Firefox, browser: firefox, runner: macos-15 }
+          # macos-26 as image_ffmpeg's Safari job (Safari 26).
+          - { name: Web macOS ARM64 Safari, browser: safari, runner: macos-26 }
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -255,14 +524,26 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@8e94d6a140db5300d9e5329bc8c2e4dc30154a08 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: web
           path: ${{ runner.temp }}/web
 
-      # Engine cases in Chrome (wasm core, storage worker, ?v= on every file),
-      # then the real-time AudioWorklet check (ADR step 9 gate), JS and Wasm.
+      - name: Firefox
+        if: matrix.browser == 'firefox'
+        run: test -x /Applications/Firefox.app/Contents/MacOS/firefox || brew install --cask firefox
+
+      - name: Safari remote automation
+        if: matrix.browser == 'safari'
+        run: sudo safaridriver --enable
+
+      # Chrome: the engine cases (wasm core, storage worker, ?v= on every
+      # file), then the real-time AudioWorklet check (ADR step 9 gate), JS and
+      # Wasm. Firefox and Safari: the AudioWorklet check, JS only (flutter
+      # test runs browser tests only in Chrome; Flutter runs dart2wasm builds
+      # only in Chromium). Safari runs through safaridriver with
+      # webkit:alwaysAllowAutoplay (no click) and WebKit's mock microphones.
       - name: Web tests
-        run: dart tool/kiln/test_web.dart --from "$RUNNER_TEMP/web"
+        run: dart tool/kiln/test_web.dart --from "$RUNNER_TEMP/web" --browser ${{ matrix.browser }}
