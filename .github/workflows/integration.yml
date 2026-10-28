@@ -1,5 +1,3 @@
-name: Integration
-
 # Native C++ tests (macOS: plain, ThreadSanitizer, and an x86_64 compile; Linux
 # x64 and arm64; Windows x64, arm64, and an arm64 cross compile) and the
 # platform devices (macOS virtual sound device: CoreAudio and Apple voice
@@ -11,6 +9,8 @@ name: Integration
 # (wasm core tests in Chrome, the real-time AudioWorklet check in Chrome,
 # Firefox and Safari, on a wasm built from these sources in the image of the
 # release workflow).
+name: Integration
+
 on:
   push:
     branches: [main, 'ci/**']
@@ -33,8 +33,8 @@ env:
   FLUTTER_SUPPRESS_ANALYTICS: 'true'
 
 jobs:
-  native:
-    name: macOS ARM64 native
+  desktop-macos-arm64-engine:
+    name: macOS ARM64 engine
     runs-on: macos-15
     timeout-minutes: 40
     steps:
@@ -98,21 +98,14 @@ jobs:
           nm -gU build/x64/libtelosnex_audio.dylib | awk '{print $3}' | tee /tmp/exports.txt
           ! grep -v '^_tsnx_' /tmp/exports.txt
 
-  native-linux:
-    name: ${{ matrix.name }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Linux x64 native
-            arch: x64
-            runner: ubuntu-24.04
-          - name: Linux ARM64 native
-            arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
+  # Linux engine: the jobs share the steps of the first (YAML anchor).
+  desktop-linux-x64-engine:
+    name: Linux x64 engine
+    env:
+      ARCH: x64
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
-    steps:
+    steps: &engine_linux_steps
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
         with:
@@ -171,7 +164,7 @@ jobs:
       # start/stop cycles). x64 only: the ARM64 runners have no /dev/kvm;
       # the ALSA code is the same on both.
       - name: Platform device (ALSA on snd-aloop, in a VM)
-        if: matrix.arch == 'x64'
+        if: env.ARCH == 'x64'
         env:
           APT_ARCHIVES: ${{ runner.temp }}/apt-debs
         run: tool/ci/alsa_vm.sh build/test
@@ -182,8 +175,16 @@ jobs:
           nm -D --defined-only build/test/libtelosnex_audio.so | awk '{print $3}' | tee /tmp/exports.txt
           ! grep -v '^tsnx_' /tmp/exports.txt
 
-  native-windows:
-    name: Windows x64 native
+  desktop-linux-arm64-engine:
+    name: Linux ARM64 engine
+    env:
+      ARCH: arm64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps: *engine_linux_steps
+
+  desktop-windows-x64-engine:
+    name: Windows x64 engine
     runs-on: windows-2025-vs2026
     timeout-minutes: 60
     steps:
@@ -226,8 +227,8 @@ jobs:
           probe --clock observe 3
           for _ in 1 2 3; do probe 1; done
 
-  native-windows-arm64:
-    name: Windows ARM64 native
+  desktop-windows-arm64-engine:
+    name: Windows ARM64 engine
     runs-on: windows-11-arm
     timeout-minutes: 60
     steps:
@@ -268,35 +269,16 @@ jobs:
           probe --clock observe 3
           for _ in 1 2 3; do probe 1; done
 
-  example-desktop:
-    name: ${{ matrix.name }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Linux x64 example
-            os: linux
-            runner: ubuntu-24.04
-            check: test -f build/linux/x64/debug/bundle/lib/libtelosnex_audio.so
-          - name: Linux ARM64 example
-            os: linux
-            runner: ubuntu-24.04-arm
-            check: test -f build/linux/arm64/debug/bundle/lib/libtelosnex_audio.so
-          - name: macOS ARM64 example
-            os: macos
-            runner: macos-15
-            check: test -d build/macos/Build/Products/Debug/telosnex_audio_example.app/Contents/Frameworks/telosnex_audio.framework
-          - name: Windows x64 example
-            os: windows
-            runner: windows-2025-vs2026
-            check: test -f build/windows/x64/runner/Debug/telosnex_audio.dll
-          - name: Windows ARM64 example
-            os: windows
-            runner: windows-11-arm
-            check: test -f build/windows/arm64/runner/Debug/telosnex_audio.dll
-    runs-on: ${{ matrix.runner }}
+  # Example app on desktop: the jobs share the steps of the first (YAML
+  # anchor). PLATFORM is the flutter build target, CHECK the build output.
+  desktop-linux-x64:
+    name: Linux x64
+    env:
+      PLATFORM: linux
+      CHECK: test -f build/linux/x64/debug/bundle/lib/libtelosnex_audio.so
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
-    steps:
+    steps: &desktop_steps
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
         with:
@@ -304,7 +286,7 @@ jobs:
           fetch-depth: 1
 
       - name: Install Linux build dependencies
-        if: matrix.os == 'linux'
+        if: env.PLATFORM == 'linux'
         run: |
           set -euo pipefail
           sudo apt-get update -q
@@ -312,10 +294,10 @@ jobs:
             libasound2-dev libpulse-dev xvfb
 
       - name: Install build tools
-        if: matrix.os == 'macos'
+        if: env.PLATFORM == 'macos'
         run: command -v ninja || brew install ninja
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
 
       # The engine cases with the manual device, and an engine that outlives
       # its isolate (hot restart), through FFI on the VM.
@@ -330,21 +312,57 @@ jobs:
         run: |
           set -euo pipefail
           flutter pub get
-          flutter build ${{ matrix.os }} --debug
-          ${{ matrix.check }}
+          flutter build "$PLATFORM" --debug
+          ${{ env.CHECK }}
 
       - name: Engine cases in the example app
         working-directory: example
         env:
-          DEVICE: ${{ matrix.os }}
+          DEVICE: ${{ env.PLATFORM }}
         run: |
           set -euo pipefail
           run=(flutter test integration_test/engine_test.dart -d "$DEVICE" -r expanded)
           if [[ "$RUNNER_OS" == Linux ]]; then run=(xvfb-run -a "${run[@]}"); fi
           "${run[@]}"
 
-  example-android:
-    name: Android universal example build
+  desktop-linux-arm64:
+    name: Linux ARM64
+    env:
+      PLATFORM: linux
+      CHECK: test -f build/linux/arm64/debug/bundle/lib/libtelosnex_audio.so
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps: *desktop_steps
+
+  desktop-macos-arm64:
+    name: macOS ARM64
+    env:
+      PLATFORM: macos
+      CHECK: test -d build/macos/Build/Products/Debug/telosnex_audio_example.app/Contents/Frameworks/telosnex_audio.framework
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps: *desktop_steps
+
+  desktop-windows-x64:
+    name: Windows x64
+    env:
+      PLATFORM: windows
+      CHECK: test -f build/windows/x64/runner/Debug/telosnex_audio.dll
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 45
+    steps: *desktop_steps
+
+  desktop-windows-arm64:
+    name: Windows ARM64
+    env:
+      PLATFORM: windows
+      CHECK: test -f build/windows/arm64/runner/Debug/telosnex_audio.dll
+    runs-on: windows-11-arm
+    timeout-minutes: 45
+    steps: *desktop_steps
+
+  android-universal:
+    name: Android universal build
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -360,7 +378,7 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q cmake ninja-build
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
 
       - name: Example app builds through the hook
         run: |
@@ -390,43 +408,32 @@ jobs:
       - name: Install build tools
         run: command -v ninja || brew install ninja
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
 
       - name: Resolve dependencies
         working-directory: example
         run: flutter pub get
 
-      # As ios-flutter-test asks: the Xcode build (WebRTC through the hook)
-      # is silent for minutes; after this, flutter test's build (its own
-      # DerivedData) reuses the hook output and takes about 2 min. Without it, flutter test's xcodebuild -showBuildSettings
-      # timed out twice (60 s each) on the cold project and the attempt
-      # failed (run of d15c193, 2026-10-27).
-      - name: Build the app
-        working-directory: example
-        run: flutter build ios --simulator --debug -t integration_test/engine_test.dart
+      - id: simulator
+        uses: Telosnex/telosnex_ci_tools/actions/ios-simulator-boot@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
 
-      - uses: Telosnex/telosnex_ci_tools/actions/ios-simulator-boot@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
-
-      - uses: Telosnex/telosnex_ci_tools/actions/ios-flutter-test@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
+      # No build ahead (flutter build ios --simulator): its generic
+      # destination does not match flutter test's -destination id=<udid>, and
+      # Xcode rebuilds everything (fonnx, 2026-10-27). The first attempt runs
+      # on the booted simulator; retries on fresh ones, while no test started.
+      # The simulator logs of each attempt: the artifact ios-simulator-logs.
+      - uses: Telosnex/telosnex_ci_tools/actions/ios-flutter-test@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
         with:
           working-directory: example
           target: integration_test/engine_test.dart
-          # Its Xcode build reuses the hook output of "Build the app".
+          udid: ${{ steps.simulator.outputs.udid }}
+          artifact-name: ios-simulator-logs
+          # The Xcode build is silent for minutes.
           idle-minutes: '15'
           # Launch to VM service took 40-190 s on passing attempts. When
           # flutter misses the app's VM service line, missed-line-seconds
           # (30) ends the attempt early.
           connect-seconds: '600'
-
-      # The simulator log, the flutter test output and stall screenshots of
-      # each attempt (ios-flutter-test writes them there).
-      - name: Upload the simulator logs
-        if: failure() || cancelled()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ios-flutter-test
-          path: ${{ runner.temp }}/ios-flutter-test/
-          retention-days: 7
 
   android:
     name: Android x64 emulator
@@ -445,9 +452,9 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q cmake ninja-build
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
 
-      - uses: Telosnex/telosnex_ci_tools/actions/android-emulator@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/android-emulator@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
         id: emulator
         with:
           api-level: '36'
@@ -473,7 +480,7 @@ jobs:
             ${{ steps.emulator.outputs.logcat }}
           retention-days: 7
 
-  web-build:
+  web-files:
     name: Web files
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -504,27 +511,27 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  web:
-    name: ${{ matrix.name }}
-    needs: web-build
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: Web macOS ARM64 Chrome, browser: chrome, runner: macos-15 }
-          - { name: Web macOS ARM64 Firefox, browser: firefox, runner: macos-15 }
-          # macos-26 as image_ffmpeg's Safari job (Safari 26).
-          - { name: Web macOS ARM64 Safari, browser: safari, runner: macos-26 }
-    runs-on: ${{ matrix.runner }}
+  # Desktop browsers: the jobs share the steps of the first (YAML anchor).
+  # BROWSER is the browser of tool/kiln/test_web.dart. Chrome runs the
+  # engine cases, then the AudioWorklet check compiled to JS and to Wasm
+  # (dart2js and dart2wasm); Firefox and Safari run the AudioWorklet check
+  # compiled to JS only.
+  web-macos-chrome-dart2js:
+    name: Web macOS ARM64 Chrome dart2js
+    needs: web-files
+    env:
+      BROWSER: chrome
+      COMPILER: dart2js
+    runs-on: macos-15
     timeout-minutes: 30
-    steps:
+    steps: &web_steps
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
         with:
           persist-credentials: false
           fetch-depth: 1
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@9179ea7a5cc9d1117c4f1099859d50dd89e8e137 # main
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -532,18 +539,49 @@ jobs:
           path: ${{ runner.temp }}/web
 
       - name: Firefox
-        if: matrix.browser == 'firefox'
+        if: env.BROWSER == 'firefox'
         run: test -x /Applications/Firefox.app/Contents/MacOS/firefox || brew install --cask firefox
 
       - name: Safari remote automation
-        if: matrix.browser == 'safari'
+        if: env.BROWSER == 'safari'
         run: sudo safaridriver --enable
 
-      # Chrome: the engine cases (wasm core, storage worker, ?v= on every
-      # file), then the real-time AudioWorklet check (ADR step 9 gate), JS and
-      # Wasm. Firefox and Safari: the AudioWorklet check, JS only (flutter
+      # Chrome dart2js: the engine cases (wasm core, storage worker, ?v= on
+      # every file), then the real-time AudioWorklet check (ADR step 9 gate).
+      # Chrome dart2wasm, Firefox and Safari: the AudioWorklet check (flutter
       # test runs browser tests only in Chrome; Flutter runs dart2wasm builds
       # only in Chromium). Safari runs through safaridriver with
       # webkit:alwaysAllowAutoplay (no click) and WebKit's mock microphones.
       - name: Web tests
-        run: dart tool/kiln/test_web.dart --from "$RUNNER_TEMP/web" --browser ${{ matrix.browser }}
+        run: dart tool/kiln/test_web.dart --from "$RUNNER_TEMP/web" --browser "$BROWSER" --compiler "$COMPILER"
+
+  web-macos-chrome-dart2wasm:
+    name: Web macOS ARM64 Chrome dart2wasm
+    needs: web-files
+    env:
+      BROWSER: chrome
+      COMPILER: dart2wasm
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps: *web_steps
+
+  web-macos-firefox-dart2js:
+    name: Web macOS ARM64 Firefox dart2js
+    needs: web-files
+    env:
+      BROWSER: firefox
+      COMPILER: dart2js
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps: *web_steps
+
+  web-macos-safari-dart2js:
+    name: Web macOS ARM64 Safari dart2js
+    needs: web-files
+    env:
+      BROWSER: safari
+      COMPILER: dart2js
+    # macos-26 as image_ffmpeg's Safari job (Safari 26).
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps: *web_steps

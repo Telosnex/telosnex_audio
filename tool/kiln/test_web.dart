@@ -26,6 +26,9 @@ Future<void> main(List<String> args) async {
 Future<void> _main(List<String> args) async {
   String? from;
   var browser = 'chrome';
+  // Null: dart2js, and dart2wasm too in Chrome (one CI job per compiler
+  // passes --compiler).
+  String? compiler;
   for (var i = 0; i < args.length; i++) {
     if (args[i] == '--from' && i + 1 < args.length) {
       from = Directory(args[++i]).absolute.path;
@@ -33,14 +36,28 @@ Future<void> _main(List<String> args) async {
         i + 1 < args.length &&
         const {'chrome', 'firefox', 'safari'}.contains(args[i + 1])) {
       browser = args[++i];
+    } else if (args[i] == '--compiler' &&
+        i + 1 < args.length &&
+        const {'dart2js', 'dart2wasm'}.contains(args[i + 1])) {
+      compiler = args[++i];
     } else {
       stderr.writeln(
         'Usage: dart tool/kiln/test_web.dart [--from <dir>] '
-        '[--browser chrome|firefox|safari]',
+        '[--browser chrome|firefox|safari] [--compiler dart2js|dart2wasm]',
       );
       exit(2);
     }
   }
+  // Flutter runs dart2wasm builds only in Chromium (no wasmAllowList).
+  if (compiler == 'dart2wasm' && browser != 'chrome') {
+    stderr.writeln('dart2wasm runs only in Chrome.');
+    exit(2);
+  }
+  final builds = switch (compiler) {
+    'dart2js' => [false],
+    'dart2wasm' => [true],
+    _ => [false, if (browser == 'chrome') true],
+  };
   from ??= switch (Platform.environment['KILN_WEB_FILES']) {
     final String dir when dir.isNotEmpty => Directory(dir).absolute.path,
     _ => null,
@@ -55,8 +72,8 @@ Future<void> _main(List<String> args) async {
     'install-dev',
     if (from != null) ...['--from', from],
   ]);
-  // flutter test runs browser tests only in Chrome.
-  if (browser == 'chrome') {
+  // flutter test runs browser tests only in Chrome; they are dart2js.
+  if (browser == 'chrome' && compiler != 'dart2wasm') {
     await _run('flutter', [
       'test',
       '--platform',
@@ -80,8 +97,7 @@ Future<void> _main(List<String> args) async {
       );
     }
     await _run('flutter', ['pub', 'get'], cwd: 'example');
-    // Flutter runs dart2wasm builds only in Chromium (no wasmAllowList).
-    for (final wasm in [false, if (browser == 'chrome') true]) {
+    for (final wasm in builds) {
       await _run('flutter', [
         'build',
         'web',
