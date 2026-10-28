@@ -516,11 +516,12 @@ jobs:
   # engine cases, then the AudioWorklet check compiled to JS and to Wasm
   # (dart2js and dart2wasm); Firefox and Safari run the AudioWorklet check
   # compiled to JS only.
-  web-macos-chrome-dart2js-dart2wasm:
-    name: Web macOS ARM64 Chrome dart2js dart2wasm
+  web-macos-chrome-dart2js:
+    name: Web macOS ARM64 Chrome dart2js
     needs: web-files
     env:
       BROWSER: chrome
+      COMPILER: dart2js
     runs-on: macos-15
     timeout-minutes: 30
     steps: &web_steps
@@ -545,20 +546,31 @@ jobs:
         if: env.BROWSER == 'safari'
         run: sudo safaridriver --enable
 
-      # Chrome: the engine cases (wasm core, storage worker, ?v= on every
-      # file), then the real-time AudioWorklet check (ADR step 9 gate), JS and
-      # Wasm. Firefox and Safari: the AudioWorklet check, JS only (flutter
+      # Chrome dart2js: the engine cases (wasm core, storage worker, ?v= on
+      # every file), then the real-time AudioWorklet check (ADR step 9 gate).
+      # Chrome dart2wasm, Firefox and Safari: the AudioWorklet check (flutter
       # test runs browser tests only in Chrome; Flutter runs dart2wasm builds
       # only in Chromium). Safari runs through safaridriver with
       # webkit:alwaysAllowAutoplay (no click) and WebKit's mock microphones.
       - name: Web tests
-        run: dart tool/kiln/test_web.dart --from "$RUNNER_TEMP/web" --browser "$BROWSER"
+        run: dart tool/kiln/test_web.dart --from "$RUNNER_TEMP/web" --browser "$BROWSER" --compiler "$COMPILER"
+
+  web-macos-chrome-dart2wasm:
+    name: Web macOS ARM64 Chrome dart2wasm
+    needs: web-files
+    env:
+      BROWSER: chrome
+      COMPILER: dart2wasm
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps: *web_steps
 
   web-macos-firefox-dart2js:
     name: Web macOS ARM64 Firefox dart2js
     needs: web-files
     env:
       BROWSER: firefox
+      COMPILER: dart2js
     runs-on: macos-15
     timeout-minutes: 30
     steps: *web_steps
@@ -568,6 +580,7 @@ jobs:
     needs: web-files
     env:
       BROWSER: safari
+      COMPILER: dart2js
     # macos-26 as image_ffmpeg's Safari job (Safari 26).
     runs-on: macos-26
     timeout-minutes: 30
