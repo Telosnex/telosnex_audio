@@ -500,8 +500,9 @@ jobs:
   # engine cases, then the AudioWorklet check compiled to JS and to Wasm
   # (dart2js and dart2wasm); Firefox and Safari run the AudioWorklet check
   # compiled to JS only. Chrome and Firefox run on Linux (headless, with
-  # fake media devices; the runner image has both browsers), and only
-  # Safari on macOS: macOS runners are the scarce ones.
+  # fake media devices; the runner image has both browsers; Firefox with a
+  # PulseAudio null sink), and only Safari on macOS: macOS runners are the
+  # scarce ones.
   web-linux-chrome-dart2js:
     name: Web Linux x64 Chrome dart2js
     needs: web-files
@@ -532,6 +533,20 @@ jobs:
           set -euo pipefail
           echo "CHROME_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
           echo "FIREFOX_EXECUTABLE=$(command -v firefox)" >> "$GITHUB_ENV"
+
+      # Firefox on Linux starts no AudioContext without a sound server (it
+      # stays suspended, as if waiting for a click). A PulseAudio null sink,
+      # as in the Linux job's platform device step.
+      - name: Sound server (Linux Firefox)
+        if: runner.os == 'Linux' && env.BROWSER == 'firefox'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends pulseaudio pulseaudio-utils
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=tsnx_null
+          pactl set-default-sink tsnx_null
+          pactl set-default-source tsnx_null.monitor
 
       - name: Safari remote automation
         if: env.BROWSER == 'safari'
