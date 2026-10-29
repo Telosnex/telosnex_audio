@@ -1,14 +1,14 @@
-# Native C++ tests (macOS: plain, ThreadSanitizer, and an x86_64 compile; Linux
-# x64 and arm64; Windows x64, arm64, and an arm64 cross compile) and the
-# platform devices (macOS virtual sound device: CoreAudio and Apple voice
-# processing; Linux: PulseAudio null sink, and ALSA on snd-aloop in a VM;
-# Windows: VB-CABLE, Core Audio); the example app on
-# every platform (Dart API tests on the VM, the app build through the
-# native-assets hook, and the engine cases of test/engine_cases.dart inside
-# the app: desktop, iOS simulator, Android emulator); and the web engine
-# (wasm core tests in Chrome, the real-time AudioWorklet check in Chrome,
-# Firefox and Safari, on a wasm built from these sources in the image of the
-# release workflow).
+# One job per desktop platform runs the native C++ tests and the platform
+# device (macOS: plain, ThreadSanitizer, an x86_64 compile, the virtual sound
+# device through CoreAudio and Apple voice processing; Linux x64 and arm64:
+# PulseAudio null sink, and ALSA on snd-aloop in a VM; Windows x64 and arm64,
+# and an arm64 cross compile: VB-CABLE, Core Audio), then the example app
+# (Dart API tests on the VM, the app build through the native-assets hook,
+# and the engine cases of test/engine_cases.dart inside the app). Also: the
+# iOS simulator, the Android emulator and an all-ABI Android build, and the
+# web engine (wasm core tests in Chrome, the real-time AudioWorklet check in
+# Chrome, Firefox and Safari, on a wasm built from these sources in the image
+# of the release workflow).
 name: Integration
 
 on:
@@ -33,12 +33,23 @@ env:
   FLUTTER_SUPPRESS_ANALYTICS: 'true'
 
 jobs:
-  desktop-macos-arm64-engine:
-    name: macOS ARM64 engine
+  # One job per platform, in two blocks that do not depend on each other: a
+  # failure in one does not skip the other (step ids and if:). The engine
+  # block: native C++ tests and the platform's real audio device, without
+  # Flutter. The Flutter block: Dart API tests, the example app build
+  # through the hook, and the engine cases in the app (manual device). Steps
+  # are shared as YAML anchors, defined in the first job that uses them.
+  desktop-macos-arm64:
+    name: macOS ARM64
+    env:
+      PLATFORM: macos
+      CHECK: test -d build/macos/Build/Products/Debug/telosnex_audio_example.app/Contents/Frameworks/telosnex_audio.framework
     runs-on: macos-15
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
-      - name: Checkout
+      - &checkout
+        name: Checkout
+        id: checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
         with:
           persist-credentials: false
@@ -51,7 +62,9 @@ jobs:
           cmake --version
           ninja --version
 
+      # Engine block.
       - name: Build and run native tests
+        id: engine
         run: |
           set -euo pipefail
           cmake -S . -B build/test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON
@@ -66,6 +79,7 @@ jobs:
       # the track does not move; the alarm catches a start/stop hang. Its
       # levels mean nothing on the virtual device.
       - name: Platform devices (CoreAudio, Apple voice processing)
+        if: ${{ !cancelled() && steps.engine.outcome == 'success' }}
         run: |
           set -euo pipefail
           cmake -S . -B build/test -DTSNX_BUILD_PROBE=ON
@@ -76,6 +90,7 @@ jobs:
           done
 
       - name: ThreadSanitizer
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         run: |
           set -euo pipefail
           tsan=-fsanitize=thread
@@ -86,6 +101,8 @@ jobs:
           TSAN_OPTIONS=halt_on_error=1 ./build/tsan/native_test/tsnx_tests
 
       - name: Compile for macOS x86_64
+        id: x86_64
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         run: |
           set -euo pipefail
           cmake -S . -B build/x64 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64
@@ -93,24 +110,62 @@ jobs:
           file build/x64/libtelosnex_audio.dylib | grep -q x86_64
 
       - name: Exported symbols are tsnx_* only (ADR D5)
+        if: ${{ !cancelled() && steps.x86_64.outcome == 'success' }}
         run: |
           set -euo pipefail
           nm -gU build/x64/libtelosnex_audio.dylib | awk '{print $3}' | tee /tmp/exports.txt
           ! grep -v '^_tsnx_' /tmp/exports.txt
 
-  # Linux engine: the jobs share the steps of the first (YAML anchor).
-  desktop-linux-x64-engine:
-    name: Linux x64 engine
+      # Flutter block.
+      - &setup_flutter
+        id: flutter
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
+
+      # The engine cases with the manual device, and an engine that outlives
+      # its isolate (hot restart), through FFI on the VM.
+      - &dart_api_tests
+        name: Dart API tests (builds the native asset)
+        if: ${{ !cancelled() && steps.flutter.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter test test/engine_test.dart test/isolate_exit_test.dart
+
+      - &example_build
+        name: Example app builds through the hook
+        id: example
+        if: ${{ !cancelled() && steps.flutter.outcome == 'success' }}
+        working-directory: example
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build "$PLATFORM" --debug
+          ${{ env.CHECK }}
+
+      - &example_cases
+        name: Engine cases in the example app
+        if: ${{ !cancelled() && steps.example.outcome == 'success' }}
+        working-directory: example
+        env:
+          DEVICE: ${{ env.PLATFORM }}
+        run: |
+          set -euo pipefail
+          run=(flutter test integration_test/engine_test.dart -d "$DEVICE" -r expanded)
+          if [[ "$RUNNER_OS" == Linux ]]; then run=(xvfb-run -a "${run[@]}"); fi
+          "${run[@]}"
+
+  # Linux: both jobs share all their steps (YAML anchor).
+  desktop-linux-x64:
+    name: Linux x64
     env:
       ARCH: x64
+      PLATFORM: linux
+      CHECK: test -f build/linux/x64/debug/bundle/lib/libtelosnex_audio.so
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps: &engine_linux_steps
-      - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
-        with:
-          persist-credentials: false
-          fetch-depth: 1
+    timeout-minutes: 75
+    steps: &linux_steps
+      - *checkout
 
       - name: Package cache key
         id: apt
@@ -125,7 +180,7 @@ jobs:
           key: apt-debs-${{ runner.arch }}-${{ steps.apt.outputs.month }}-${{ hashFiles('.github/workflows/integration.yml', 'tool/ci/alsa_vm.sh') }}
           restore-keys: apt-debs-${{ runner.arch }}-
 
-      - name: Install build tools and audio headers
+      - name: Install build tools, audio headers and Flutter's Linux dependencies
         env:
           APT_ARCHIVES: ${{ runner.temp }}/apt-debs
         run: |
@@ -133,9 +188,12 @@ jobs:
           mkdir -p "$APT_ARCHIVES/partial"
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends -o Dir::Cache::Archives="$APT_ARCHIVES" \
-            cmake ninja-build g++ libasound2-dev libpulse-dev pulseaudio pulseaudio-utils
+            cmake ninja-build g++ clang pkg-config libgtk-3-dev libasound2-dev libpulse-dev \
+            pulseaudio pulseaudio-utils xvfb xauth
 
+      # Engine block.
       - name: Build and run native tests
+        id: engine
         run: |
           set -euo pipefail
           cmake -S . -B build/test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON -DTSNX_BUILD_PROBE=ON
@@ -148,6 +206,7 @@ jobs:
       # selection, a second without capture, a track that does not move);
       # the alarm catches a start/stop hang.
       - name: Platform device (PulseAudio null sink)
+        if: ${{ !cancelled() && steps.engine.outcome == 'success' }}
         run: |
           set -euo pipefail
           pulseaudio --start --exit-idle-time=-1
@@ -164,42 +223,55 @@ jobs:
       # start/stop cycles). x64 only: the ARM64 runners have no /dev/kvm;
       # the ALSA code is the same on both.
       - name: Platform device (ALSA on snd-aloop, in a VM)
-        if: env.ARCH == 'x64'
+        if: ${{ !cancelled() && steps.engine.outcome == 'success' && env.ARCH == 'x64' }}
         env:
           APT_ARCHIVES: ${{ runner.temp }}/apt-debs
         run: tool/ci/alsa_vm.sh build/test
 
       - name: Exported symbols are tsnx_* only (ADR D5)
+        if: ${{ !cancelled() && steps.engine.outcome == 'success' }}
         run: |
           set -euo pipefail
           nm -D --defined-only build/test/libtelosnex_audio.so | awk '{print $3}' | tee /tmp/exports.txt
           ! grep -v '^tsnx_' /tmp/exports.txt
 
-  desktop-linux-arm64-engine:
-    name: Linux ARM64 engine
+      # Flutter block.
+      - *setup_flutter
+      - *dart_api_tests
+      - *example_build
+      - *example_cases
+
+  desktop-linux-arm64:
+    name: Linux ARM64
     env:
       ARCH: arm64
+      PLATFORM: linux
+      CHECK: test -f build/linux/arm64/debug/bundle/lib/libtelosnex_audio.so
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 60
-    steps: *engine_linux_steps
+    timeout-minutes: 75
+    steps: *linux_steps
 
-  desktop-windows-x64-engine:
-    name: Windows x64 engine
+  desktop-windows-x64:
+    name: Windows x64
+    env:
+      PLATFORM: windows
+      CHECK: test -f build/windows/x64/runner/Debug/telosnex_audio.dll
     runs-on: windows-2025-vs2026
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
-      - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
-        with:
-          persist-credentials: false
-          fetch-depth: 1
+      - *checkout
 
       # VB-CABLE: the hosted runners have no audio endpoints.
-      - name: Install VB-CABLE
+      - &vbcable
+        name: Install VB-CABLE
+        id: vbcable
         shell: pwsh
         run: tool/ci/install_vbcable.ps1
 
+      # Engine block.
       - name: Build and run native tests (x64), compile arm64
+        id: engine
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         shell: cmd
         run: |
           for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set VS=%%i
@@ -218,7 +290,9 @@ jobs:
       # with clock observation, and start/stop cycles. echo_probe fails on a
       # failed request, an engine error, a second without capture, or a
       # track that does not move; the alarm catches a hang.
-      - name: Platform device (VB-CABLE)
+      - &vbcable_probe
+        name: Platform device (VB-CABLE)
+        if: ${{ !cancelled() && steps.engine.outcome == 'success' && steps.vbcable.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -227,23 +301,27 @@ jobs:
           probe --clock observe 3
           for _ in 1 2 3; do probe 1; done
 
-  desktop-windows-arm64-engine:
-    name: Windows ARM64 engine
+      # Flutter block.
+      - *setup_flutter
+      - *dart_api_tests
+      - *example_build
+      - *example_cases
+
+  desktop-windows-arm64:
+    name: Windows ARM64
+    env:
+      PLATFORM: windows
+      CHECK: test -f build/windows/arm64/runner/Debug/telosnex_audio.dll
     runs-on: windows-11-arm
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
-      - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
-        with:
-          persist-credentials: false
-          fetch-depth: 1
+      - *checkout
+      - *vbcable
 
-      # VB-CABLE: the hosted runners have no audio endpoints.
-      - name: Install VB-CABLE
-        shell: pwsh
-        run: tool/ci/install_vbcable.ps1
-
+      # Engine block.
       - name: Build and run native tests (arm64)
+        id: engine
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         shell: cmd
         run: |
           for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set VS=%%i
@@ -256,110 +334,13 @@ jobs:
           findstr /R /C:"^ *[1-9][0-9]*  *[0-9A-F][0-9A-F]*  *[0-9A-F][0-9A-F]*  *[^ ]" exports.txt | findstr /V /C:" tsnx_" && exit /b 1
           exit /b 0
 
-      # The Core Audio device on VB-CABLE: routes, 3 s of play and capture
-      # with clock observation, and start/stop cycles. echo_probe fails on a
-      # failed request, an engine error, a second without capture, or a
-      # track that does not move; the alarm catches a hang.
-      - name: Platform device (VB-CABLE)
-        shell: bash
-        run: |
-          set -euo pipefail
-          probe() { perl -e 'alarm shift; exec @ARGV' 60 build/test/echo_probe.exe "$@"; }
-          probe --routes
-          probe --clock observe 3
-          for _ in 1 2 3; do probe 1; done
+      - *vbcable_probe
 
-  # Example app on desktop: the jobs share the steps of the first (YAML
-  # anchor). PLATFORM is the flutter build target, CHECK the build output.
-  desktop-linux-x64:
-    name: Linux x64
-    env:
-      PLATFORM: linux
-      CHECK: test -f build/linux/x64/debug/bundle/lib/libtelosnex_audio.so
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    steps: &desktop_steps
-      - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
-        with:
-          persist-credentials: false
-          fetch-depth: 1
-
-      - name: Install Linux build dependencies
-        if: env.PLATFORM == 'linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update -q
-          sudo apt-get install -y -q cmake ninja-build clang pkg-config libgtk-3-dev \
-            libasound2-dev libpulse-dev xvfb
-
-      - name: Install build tools
-        if: env.PLATFORM == 'macos'
-        run: command -v ninja || brew install ninja
-
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
-
-      # The engine cases with the manual device, and an engine that outlives
-      # its isolate (hot restart), through FFI on the VM.
-      - name: Dart API tests (builds the native asset)
-        run: |
-          set -euo pipefail
-          flutter pub get
-          flutter test test/engine_test.dart test/isolate_exit_test.dart
-
-      - name: Example app builds through the hook
-        working-directory: example
-        run: |
-          set -euo pipefail
-          flutter pub get
-          flutter build "$PLATFORM" --debug
-          ${{ env.CHECK }}
-
-      - name: Engine cases in the example app
-        working-directory: example
-        env:
-          DEVICE: ${{ env.PLATFORM }}
-        run: |
-          set -euo pipefail
-          run=(flutter test integration_test/engine_test.dart -d "$DEVICE" -r expanded)
-          if [[ "$RUNNER_OS" == Linux ]]; then run=(xvfb-run -a "${run[@]}"); fi
-          "${run[@]}"
-
-  desktop-linux-arm64:
-    name: Linux ARM64
-    env:
-      PLATFORM: linux
-      CHECK: test -f build/linux/arm64/debug/bundle/lib/libtelosnex_audio.so
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 45
-    steps: *desktop_steps
-
-  desktop-macos-arm64:
-    name: macOS ARM64
-    env:
-      PLATFORM: macos
-      CHECK: test -d build/macos/Build/Products/Debug/telosnex_audio_example.app/Contents/Frameworks/telosnex_audio.framework
-    runs-on: macos-15
-    timeout-minutes: 45
-    steps: *desktop_steps
-
-  desktop-windows-x64:
-    name: Windows x64
-    env:
-      PLATFORM: windows
-      CHECK: test -f build/windows/x64/runner/Debug/telosnex_audio.dll
-    runs-on: windows-2025-vs2026
-    timeout-minutes: 45
-    steps: *desktop_steps
-
-  desktop-windows-arm64:
-    name: Windows ARM64
-    env:
-      PLATFORM: windows
-      CHECK: test -f build/windows/arm64/runner/Debug/telosnex_audio.dll
-    runs-on: windows-11-arm
-    timeout-minutes: 45
-    steps: *desktop_steps
+      # Flutter block.
+      - *setup_flutter
+      - *dart_api_tests
+      - *example_build
+      - *example_cases
 
   android-universal:
     name: Android universal build
