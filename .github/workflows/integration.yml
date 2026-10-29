@@ -499,14 +499,17 @@ jobs:
   # BROWSER is the browser of tool/kiln/test_web.dart. Chrome runs the
   # engine cases, then the AudioWorklet check compiled to JS and to Wasm
   # (dart2js and dart2wasm); Firefox and Safari run the AudioWorklet check
-  # compiled to JS only.
-  web-macos-chrome-dart2js:
-    name: Web macOS ARM64 Chrome dart2js
+  # compiled to JS only. Chrome and Firefox run on Linux (headless, with
+  # fake media devices; the runner image has both browsers; Firefox with a
+  # PulseAudio null sink), and only Safari on macOS: macOS runners are the
+  # scarce ones.
+  web-linux-chrome-dart2js:
+    name: Web Linux x64 Chrome dart2js
     needs: web-files
     env:
       BROWSER: chrome
       COMPILER: dart2js
-    runs-on: macos-15
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps: &web_steps
       - name: Checkout
@@ -522,9 +525,28 @@ jobs:
           name: web
           path: ${{ runner.temp }}/web
 
-      - name: Firefox
-        if: env.BROWSER == 'firefox'
-        run: test -x /Applications/Firefox.app/Contents/MacOS/firefox || brew install --cask firefox
+      # The scripts default to the macOS apps; the Linux image has both
+      # browsers on PATH.
+      - name: Browser paths (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          echo "CHROME_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          echo "FIREFOX_EXECUTABLE=$(command -v firefox)" >> "$GITHUB_ENV"
+
+      # Firefox on Linux starts no AudioContext without a sound server (it
+      # stays suspended, as if waiting for a click). A PulseAudio null sink,
+      # as in the Linux job's platform device step.
+      - name: Sound server (Linux Firefox)
+        if: runner.os == 'Linux' && env.BROWSER == 'firefox'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends pulseaudio pulseaudio-utils
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=tsnx_null
+          pactl set-default-sink tsnx_null
+          pactl set-default-source tsnx_null.monitor
 
       - name: Safari remote automation
         if: env.BROWSER == 'safari'
@@ -539,23 +561,23 @@ jobs:
       - name: Web tests
         run: dart tool/kiln/test_web.dart --from "$RUNNER_TEMP/web" --browser "$BROWSER" --compiler "$COMPILER"
 
-  web-macos-chrome-dart2wasm:
-    name: Web macOS ARM64 Chrome dart2wasm
+  web-linux-chrome-dart2wasm:
+    name: Web Linux x64 Chrome dart2wasm
     needs: web-files
     env:
       BROWSER: chrome
       COMPILER: dart2wasm
-    runs-on: macos-15
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps: *web_steps
 
-  web-macos-firefox-dart2js:
-    name: Web macOS ARM64 Firefox dart2js
+  web-linux-firefox-dart2js:
+    name: Web Linux x64 Firefox dart2js
     needs: web-files
     env:
       BROWSER: firefox
       COMPILER: dart2js
-    runs-on: macos-15
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps: *web_steps
 
