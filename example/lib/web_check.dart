@@ -355,9 +355,18 @@ Future<void> idleStop(AudioEngine engine) async {
     ..play();
   final sw = Stopwatch()..start();
   await started.future.timeout(const Duration(seconds: 2), onTimeout: () {});
+  // Firefox can render the first quantum (TrackStarted) before it flips
+  // AudioContext.state to 'running', so give the state a moment to follow.
+  final stateDeadline = Stopwatch()..start();
+  while (started.isCompleted &&
+      debugContextState(engine) != 'running' &&
+      stateDeadline.elapsedMilliseconds < 500) {
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
   check(
     started.isCompleted && debugContextState(engine) == 'running',
-    'play() resumes the context (started after ${sw.elapsedMilliseconds} ms)',
+    'play() resumes the context (started after ${sw.elapsedMilliseconds} ms, '
+    'state ${debugContextState(engine)})',
   );
   await t.dispose();
 }
