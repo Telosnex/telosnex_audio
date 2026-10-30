@@ -18,7 +18,7 @@ Hardware gates remain open as listed below.
 - macOS fork ADM = AudioEngineDevice (AVAudioEngine, Apple voice processing).
 - Shell for cli tool is sh: no process substitution.
 - Prebuilt libraries (2026-10-14, PR #4, b383d11): package:native_prebuilt. Hook in
-  hook/native_build.dart (counts in the source key). User define native_build:
+  hook_src/native_build.dart (counts in the source key). User define native_build:
   auto | download | source. Release: `git push -f origin HEAD:native-release`
   (`native-release-dry` builds only), then merge the native-manifest/<tag> branch.
   Current release native-b3dcd92de937268a, six desktop targets, glibc <= 2.34,
