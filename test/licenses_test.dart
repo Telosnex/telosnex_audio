@@ -10,7 +10,9 @@ void main() {
     final bundle = bundledLicenses(root);
     expect(File('${root.path}/LICENSE').readAsStringSync(), bundle);
     final sections = bundle.split('\n${'-' * 80}\n');
-    expect(sections, hasLength(licenseSources.length));
+    // Telosnex's own section, then one per bundled source.
+    expect(sections, hasLength(licenseSources.length + 1));
+    expect(sections.first, startsWith('telosnex_audio\n\nMIT License'));
     for (final entry in licenseSources.entries) {
       final section = sections.singleWhere(
         (s) => s.startsWith('telosnex_audio\n${entry.value}\n\n'),
