@@ -2,7 +2,7 @@ import 'package:code_assets/code_assets.dart';
 import 'package:hooks/hooks.dart';
 import 'package:kiln/kiln.dart';
 
-import 'native_build.dart';
+import '../hook_src/native_build.dart';
 
 void main(List<String> args) async {
   await build(args, (input, output) async {

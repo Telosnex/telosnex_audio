@@ -1,7 +1,7 @@
 import 'package:code_assets/code_assets.dart';
 import 'package:test/test.dart';
 
-import '../hook/native_build.dart';
+import '../hook_src/native_build.dart';
 
 void main() {
   test(
