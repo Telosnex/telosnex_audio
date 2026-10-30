@@ -120,7 +120,7 @@ jobs:
       - &setup_flutter
         id: flutter
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
-        uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
+        uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@027b68d29929047f2ba95034735d4b9e4be3c650 # v0.5.5
 
       # The engine cases with the manual device, and an engine that outlives
       # its isolate (hot restart), through FFI on the VM.
@@ -362,7 +362,7 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q cmake ninja-build
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@027b68d29929047f2ba95034735d4b9e4be3c650 # v0.5.5
 
       - name: Example app builds through the hook
         run: |
@@ -392,21 +392,21 @@ jobs:
       - name: Install build tools
         run: command -v ninja || brew install ninja
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@027b68d29929047f2ba95034735d4b9e4be3c650 # v0.5.5
 
       - name: Resolve dependencies
         working-directory: example
         run: flutter pub get
 
       - id: simulator
-        uses: Telosnex/telosnex_ci_tools/actions/ios-simulator-boot@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
+        uses: Telosnex/telosnex_ci_tools/actions/ios-simulator-boot@027b68d29929047f2ba95034735d4b9e4be3c650 # v0.5.5
 
       # No build ahead (flutter build ios --simulator): its generic
       # destination does not match flutter test's -destination id=<udid>, and
       # Xcode rebuilds everything (fonnx, 2026-10-27). The first attempt runs
       # on the booted simulator; retries on fresh ones, while no test started.
       # The simulator logs of each attempt: the artifact ios-simulator-logs.
-      - uses: Telosnex/telosnex_ci_tools/actions/ios-flutter-test@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
+      - uses: Telosnex/telosnex_ci_tools/actions/ios-flutter-test@027b68d29929047f2ba95034735d4b9e4be3c650 # v0.5.5
         with:
           working-directory: example
           target: integration_test/engine_test.dart
@@ -436,9 +436,9 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q cmake ninja-build
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@027b68d29929047f2ba95034735d4b9e4be3c650 # v0.5.5
 
-      - uses: Telosnex/telosnex_ci_tools/actions/android-emulator@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
+      - uses: Telosnex/telosnex_ci_tools/actions/android-emulator@027b68d29929047f2ba95034735d4b9e4be3c650 # v0.5.5
         id: emulator
         with:
           api-level: '36'
@@ -518,9 +518,9 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@cba77fc0d4330f1bef81193c53cd7dd976f0ebcf # v0.5.3
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@027b68d29929047f2ba95034735d4b9e4be3c650 # v0.5.5
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: Telosnex/telosnex_ci_tools/actions/download-artifact@027b68d29929047f2ba95034735d4b9e4be3c650 # v0.5.5
         with:
           name: web
           path: ${{ runner.temp }}/web
