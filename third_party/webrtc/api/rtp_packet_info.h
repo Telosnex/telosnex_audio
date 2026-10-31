@@ -91,7 +91,10 @@ class RTC_EXPORT RtpPacketInfo {
     return *this;
   }
 
-  friend bool operator==(const RtpPacketInfo& lhs, const RtpPacketInfo& rhs);
+  // telosnex_audio: defaulted in the class. MSVC rejects the out-of-class
+  // defaulted friend comparison (C2610) that upstream has in the .cc file.
+  friend bool operator==(const RtpPacketInfo& lhs,
+                         const RtpPacketInfo& rhs) = default;
 
  private:
   // Fields from the RTP header:
