@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceKey": "054a84b24d785903a59adfb8fb463287b6eafc45b76099e2c29b6ce803095a6d",
-  "release": "https://github.com/Telosnex/telosnex_audio/releases/tag/native-054a84b24d785903",
+  "sourceKey": "baf2700fc9b74437e481fd47f975ab8765cfa4ac0a517597b885631d2e99810e",
+  "release": "https://github.com/Telosnex/telosnex_audio/releases/tag/native-baf2700fc9b74437",
   "targets": {
     "android-arm": {
       "runner": "ubuntu22 20261026.341.1",
@@ -10,9 +10,9 @@
       "files": [
         {
           "name": "libtelosnex_audio.so",
-          "sha256": "1aeb2d8fea690f81ffafa51d3547fe35b8877763fc5c07b8458a4a49ca4e663c",
-          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-054a84b24d785903/android-arm-libtelosnex_audio.so.gz",
-          "downloadSha256": "e4aa260fb617446aef5ffe759391cf1b563ba49553bc1ce89cb56000d39de36a",
+          "sha256": "6991190e140939a49c96547724b720ee2d7f6632d09abe2d82b8cfca83b3bf81",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-baf2700fc9b74437/android-arm-libtelosnex_audio.so.gz",
+          "downloadSha256": "4a60084820c8d8bbaa8ca60b2332b91084d35a3a160cee586cedc08e6dd4a16d",
           "delivery": "bundle",
           "asset": "src/ffi.dart"
         }
@@ -25,9 +25,9 @@
       "files": [
         {
           "name": "libtelosnex_audio.so",
-          "sha256": "a5853815a76e38f932d55d3570e14315488852777e23fd168b88f718dd096f70",
-          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-054a84b24d785903/android-arm64-libtelosnex_audio.so.gz",
-          "downloadSha256": "cbcf3276d95787d6dc024f29f9b9f747f22fb7ebfe014d32b6a0dadbe432b3d5",
+          "sha256": "26985e7ced61a7c3999dff23ca8b3587dc9877abe106c277397a30275c9d196d",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-baf2700fc9b74437/android-arm64-libtelosnex_audio.so.gz",
+          "downloadSha256": "5c019460ab979a5c7f333da0b730edca106da566b55c0ead535b4fe29ca0d461",
           "delivery": "bundle",
           "asset": "src/ffi.dart"
         }
@@ -40,9 +40,9 @@
       "files": [
         {
           "name": "libtelosnex_audio.so",
-          "sha256": "0d010595c9aeaa1b1ce95d83f3bc214fa8f5c7cd4bb92b27242ea62a96514124",
-          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-054a84b24d785903/android-x64-libtelosnex_audio.so.gz",
-          "downloadSha256": "e7495a67ea8dd9e5b0c68ad247c73d035c618b25b54b272cc957d9e2db8b86a8",
+          "sha256": "961c6afd2a0f91c320c1b86355cf7892dc026a9a8f036c82e9d065882ff3a3ff",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-baf2700fc9b74437/android-x64-libtelosnex_audio.so.gz",
+          "downloadSha256": "b7ef3b92b8d5ad62132e9aacb328272239c51a768e33d3c000f45af038bc3f51",
           "delivery": "bundle",
           "asset": "src/ffi.dart"
         }
@@ -55,9 +55,9 @@
       "files": [
         {
           "name": "libtelosnex_audio.dylib",
-          "sha256": "a1c3e0b7b0993c9074b229e6aff60a76c912fe7448598e6eb0699e963cf07da6",
-          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-054a84b24d785903/ios-arm64-iphoneos-libtelosnex_audio.dylib.gz",
-          "downloadSha256": "dad17411f2aec46cdf0f3f8c2724e0706b558c123639846d7d73f7bc2c778f86",
+          "sha256": "2feaa5dec5ea71f3f187773e4b611eb0a4740d320c19c10d00c4d647d5ae6676",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-baf2700fc9b74437/ios-arm64-iphoneos-libtelosnex_audio.dylib.gz",
+          "downloadSha256": "521cfb5a738312b9882962452816d1ccb94a36b54da3ed211ab9084f8ed4e655",
           "delivery": "bundle",
           "asset": "src/ffi.dart"
         }
@@ -70,24 +70,24 @@
       "files": [
         {
           "name": "libtelosnex_audio.dylib",
-          "sha256": "cf7254741dcc6f885630b33804ebdb4744984b44ec1ce132c1525f38d88901b7",
-          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-054a84b24d785903/ios-arm64-iphonesimulator-libtelosnex_audio.dylib.gz",
-          "downloadSha256": "db8ee437ee5fa4b13a08774e0b5d82f586a986d84998d3000bc020844ad912ea",
+          "sha256": "ec2421acc9a786a3634ae68b2916ae3d5aa8e5a41ad4c7d78e9f8bb4edb14df3",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-baf2700fc9b74437/ios-arm64-iphonesimulator-libtelosnex_audio.dylib.gz",
+          "downloadSha256": "e6707cb6c316cd9a2c248a0ef23888704dfd8136bd02640a97d42cba514c9285",
           "delivery": "bundle",
           "asset": "src/ffi.dart"
         }
       ]
     },
     "ios-x64-iphonesimulator": {
-      "runner": "macos15 20260907.0337.1",
-      "toolchain": "Xcode 16.4, cmake version 4.4.3",
+      "runner": "macos15 20261028.0489.1",
+      "toolchain": "Xcode 16.4, cmake version 4.4.4",
       "minOSVersion": 13,
       "files": [
         {
           "name": "libtelosnex_audio.dylib",
-          "sha256": "e828a78f8a9530e21591ee1a381c25b14255ab341826ece6a0bed4ff4b401e60",
-          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-054a84b24d785903/ios-x64-iphonesimulator-libtelosnex_audio.dylib.gz",
-          "downloadSha256": "01d0ce1af9efbf1bf714e5cee3d17e7ff8fe949f9c9f69da4bd734414d19da38",
+          "sha256": "d673e89938723d13709a6692b6c20bea0ae375d29ec9f0a22cb2e3019ca8e132",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-baf2700fc9b74437/ios-x64-iphonesimulator-libtelosnex_audio.dylib.gz",
+          "downloadSha256": "4f7870976e86a8a59ddd3145210f22850733210881dfb95ac97a434d4da318a1",
           "delivery": "bundle",
           "asset": "src/ffi.dart"
         }
@@ -99,9 +99,9 @@
       "files": [
         {
           "name": "libtelosnex_audio.so",
-          "sha256": "42825e00332ee3e58f7e12628abde6bda740b6c8349b1fb37c516b47bab6072e",
-          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-054a84b24d785903/linux-arm64-libtelosnex_audio.so.gz",
-          "downloadSha256": "522766505e36375c3b2a2312d574edae3ee6e960c7efe5e3a9368b1636318700",
+          "sha256": "8b27af38cca9a801564fa4d742a95c913e2ca9d583416eec6ee67d08dba4763c",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-baf2700fc9b74437/linux-arm64-libtelosnex_audio.so.gz",
+          "downloadSha256": "88205015982ecd42450ba7de877d8666a183e3a00eef20093b49bf186c7869b1",
           "delivery": "bundle",
           "asset": "src/ffi.dart"
         }
@@ -113,9 +113,9 @@
       "files": [
         {
           "name": "libtelosnex_audio.so",
-          "sha256": "363cb6397f744ebbb5617c7ff06c9fb179c994c10c5af3b2ae3f78dee3b22bbb",
-          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-054a84b24d785903/linux-x64-libtelosnex_audio.so.gz",
-          "downloadSha256": "66db107355a79e308bd8f7801e5c57c923371048ff5c58515abb31fd238b3973",
+          "sha256": "cdcea3160e8be81b2cd6094d2a6f792407797b47b4eb8220c23e62dd3728f40a",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-baf2700fc9b74437/linux-x64-libtelosnex_audio.so.gz",
+          "downloadSha256": "a317b5f05d48c5e70e8b42ca682786f020bbc507c6688183e36f471209193b02",
           "delivery": "bundle",
           "asset": "src/ffi.dart"
         }
@@ -128,9 +128,9 @@
       "files": [
         {
           "name": "libtelosnex_audio.dylib",
-          "sha256": "ec9525094566cae05ad23c3f6d43fade67c014735b407da47799580be94c8f1c",
-          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-054a84b24d785903/macos-arm64-libtelosnex_audio.dylib.gz",
-          "downloadSha256": "d212cb5427ab3a5e946a60b454126f9aedfad27faa2acb97db302d1f8baef6e5",
+          "sha256": "1a91a0fd3a454eaa547cdfb4febacf7673ec67d2bb396b7a7e8d3cd471e21d73",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-baf2700fc9b74437/macos-arm64-libtelosnex_audio.dylib.gz",
+          "downloadSha256": "70496b890a0b94025fe833021cd6aaf14387a531a929ad6a21a1112b8bdfc2f0",
           "delivery": "bundle",
           "asset": "src/ffi.dart"
         }
@@ -143,9 +143,9 @@
       "files": [
         {
           "name": "libtelosnex_audio.dylib",
-          "sha256": "ee19d64c6a7e56416e9c2153bf494c311d8d0fad5e86883304d4d5ecb31f6851",
-          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-054a84b24d785903/macos-x64-libtelosnex_audio.dylib.gz",
-          "downloadSha256": "45d5826339bc6bc209884816e7363ca2f0a97c1de3189296c0d75e3d6924eeca",
+          "sha256": "d0bda5e11189dc0d1fec5c3aac43bdacb9cf277b4833a7ef0dc3e94ddfbda6a8",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-baf2700fc9b74437/macos-x64-libtelosnex_audio.dylib.gz",
+          "downloadSha256": "9f1600d56fc2e259e7bc12798997753ba045f38e66a749bbfd8cb30b91f58272",
           "delivery": "bundle",
           "asset": "src/ffi.dart"
         }
@@ -157,23 +157,23 @@
       "files": [
         {
           "name": "telosnex_audio.dll",
-          "sha256": "b6dfbb200d1ddc8b4591a8e6a2721884b3b4d0ef9f5fe4e81d17d968f557fff8",
-          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-054a84b24d785903/windows-arm64-telosnex_audio.dll.gz",
-          "downloadSha256": "642db3a990a0cb9e6b0e4d292beee4527d957638327def3cd38a0e0472de9ac2",
+          "sha256": "b9334addb38ecc5de08bff1db5d1b7770383588c32d486bffb53170ad4768a14",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-baf2700fc9b74437/windows-arm64-telosnex_audio.dll.gz",
+          "downloadSha256": "8030c40de26a6829374a392a9530d6b59ce2fc2bc1280b38f146d9a88f22c9f4",
           "delivery": "bundle",
           "asset": "src/ffi.dart"
         }
       ]
     },
     "windows-x64": {
-      "runner": "win25-vs2026 20261021.278.1",
-      "toolchain": "Visual Studio 18.11.1, cmake version 4.4.4",
+      "runner": "win25-vs2026 20261030.294.1",
+      "toolchain": "Visual Studio 18.11.3, cmake version 4.4.5",
       "files": [
         {
           "name": "telosnex_audio.dll",
-          "sha256": "9fc4d5218ad4fe8bc833560939e9866765d345465a1523aaa7b3bd091a39f502",
-          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-054a84b24d785903/windows-x64-telosnex_audio.dll.gz",
-          "downloadSha256": "3db3f3a83c1632511a5cae0c7496d6849283fe52f30d676002a3fad22e4843b4",
+          "sha256": "b9090ec260ba7dc4e01a2b68d32496a075a71ec97c6bf1f56ea2b713384da727",
+          "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-baf2700fc9b74437/windows-x64-telosnex_audio.dll.gz",
+          "downloadSha256": "4086bb03950ba51e9cba74f4e5d6b908256427c8854dbd3a175fbb032e2e0d04",
           "delivery": "bundle",
           "asset": "src/ffi.dart"
         }
