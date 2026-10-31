@@ -3,6 +3,7 @@
   "webrtc": {
     "url": "https://github.com/webrtc-sdk/webrtc.git",
     "commit": "30d5e63ae91da483e06577b5c35ee91cc5e5c3db",
+    "branch": "m144_release",
     "third_party_url": "https://chromium.googlesource.com/chromium/src/third_party",
     "third_party_commit": "a3b630c291f1cf3b711687b1c4be322d3015512e",
     "include_roots": [
@@ -526,6 +527,10 @@
         "api/task_queue/default_task_queue_factory_stdlib.cc",
         "rtc_base/task_queue_stdlib.cc"
       ]
+    },
+    "watch": {
+      "seen_milestone": 144,
+      "ignore": []
     }
   },
   "sonic": {

@@ -1,0 +1,51 @@
+# Daily: does the vendored native code (WebRTC from webrtc-sdk, Chromium
+# third_party, Sonic, minimp3) have an update? .github/vendor_watch.dart reads
+# the pins in tool/vendor_manifest.json. The run fails when it finds an
+# update, and GitHub emails a failed scheduled run to whoever last changed
+# this file. VENDORING.md tells you what to do about each finding.
+name: Vendor watch
+
+on:
+  schedule:
+    - cron: '41 6 * * *'
+  # Shows at once whether a pin change or an acknowledgment cleared it.
+  push:
+    branches: [main]
+    paths:
+      - tool/vendor_manifest.json
+      - .github/vendor_watch.dart
+      - .github/workflows/vendor_watch.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vendor-watch
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  FLUTTER_SUPPRESS_ANALYTICS: 'true'
+
+jobs:
+  watch:
+    name: Vendor watch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@0554f3662445d678e2effbd838d15968d673f7af # v0.5.6
+
+      - name: Check upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: dart .github/vendor_watch.dart
