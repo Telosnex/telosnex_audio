@@ -55,7 +55,7 @@ namespace {
 class Fixed48kRate : public webrtc::OutputRateCalculator {
  public:
   int CalculateOutputRateFromRange(
-      webrtc::ArrayView<const int> /*rates*/) override {
+      std::span<const int> /*rates*/) override {
     return Engine::kMixRate;
   }
 };

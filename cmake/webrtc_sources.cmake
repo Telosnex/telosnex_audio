@@ -419,6 +419,16 @@ set(TSNX_WEBRTC_SOURCES_COMMON
   ${TSNX_WEBRTC_DIR}/third_party/abseil-cpp/absl/time/time.cc
   ${TSNX_WEBRTC_DIR}/third_party/pffft/src/pffft.c
   ${TSNX_WEBRTC_DIR}/third_party/rnnoise/src/rnn_vad_weights.cc
+  ${TSNX_WEBRTC_DIR}/modules/audio_processing/aec3/moving_average_spectrum.cc
+  ${TSNX_WEBRTC_DIR}/modules/audio_processing/capture_mixer/audio_content_analyzer.cc
+  ${TSNX_WEBRTC_DIR}/modules/audio_processing/capture_mixer/capture_mixer.cc
+  ${TSNX_WEBRTC_DIR}/modules/audio_processing/capture_mixer/channel_content_remixer.cc
+  ${TSNX_WEBRTC_DIR}/modules/audio_processing/capture_mixer/dc_levels_estimator.cc
+  ${TSNX_WEBRTC_DIR}/modules/audio_processing/capture_mixer/energy_estimator.cc
+  ${TSNX_WEBRTC_DIR}/modules/audio_processing/capture_mixer/remixing_logic.cc
+  ${TSNX_WEBRTC_DIR}/modules/audio_processing/capture_mixer/saturation_estimator.cc
+  ${TSNX_WEBRTC_DIR}/rtc_base/ref_counter.cc
+  ${TSNX_WEBRTC_DIR}/rtc_base/system/system_time.cc
 )
 set(TSNX_WEBRTC_SOURCES_ARM64
   ${TSNX_WEBRTC_DIR}/common_audio/fir_filter_neon.cc

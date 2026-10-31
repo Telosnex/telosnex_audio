@@ -1,5 +1,6 @@
 #include "android/aaudio_device.h"
 
+#include <span>
 #include <aaudio/AAudio.h>
 #include <dlfcn.h>
 #include <sys/system_properties.h>
@@ -598,11 +599,11 @@ class AAudioDevice final : public webrtc::AudioDeviceGeneric,
       }
       UpdateOutputDelay(st);
       st.fine->GetPlayoutData(
-          webrtc::ArrayView<int16_t>(static_cast<int16_t*>(data), samples),
+          std::span<int16_t>(static_cast<int16_t*>(data), samples),
           st.delay_ms.load(std::memory_order_relaxed));
     } else {
       st.fine->DeliverRecordedData(
-          webrtc::ArrayView<const int16_t>(static_cast<const int16_t*>(data),
+          std::span<const int16_t>(static_cast<const int16_t*>(data),
                                            samples),
           st.delay_ms.load(std::memory_order_relaxed));
     }

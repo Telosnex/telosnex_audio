@@ -446,7 +446,17 @@
         "third_party/abseil-cpp/absl/time/internal/cctz/src/zone_info_source.cc",
         "third_party/abseil-cpp/absl/time/time.cc",
         "third_party/pffft/src/pffft.c",
-        "third_party/rnnoise/src/rnn_vad_weights.cc"
+        "third_party/rnnoise/src/rnn_vad_weights.cc",
+        "modules/audio_processing/aec3/moving_average_spectrum.cc",
+        "modules/audio_processing/capture_mixer/audio_content_analyzer.cc",
+        "modules/audio_processing/capture_mixer/capture_mixer.cc",
+        "modules/audio_processing/capture_mixer/channel_content_remixer.cc",
+        "modules/audio_processing/capture_mixer/dc_levels_estimator.cc",
+        "modules/audio_processing/capture_mixer/energy_estimator.cc",
+        "modules/audio_processing/capture_mixer/remixing_logic.cc",
+        "modules/audio_processing/capture_mixer/saturation_estimator.cc",
+        "rtc_base/ref_counter.cc",
+        "rtc_base/system/system_time.cc"
       ],
       "arm64": [
         "common_audio/fir_filter_neon.cc",
