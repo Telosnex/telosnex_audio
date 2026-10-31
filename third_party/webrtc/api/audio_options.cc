@@ -13,14 +13,13 @@
 #include <optional>
 #include <string>
 
-#include "api/array_view.h"
 #include "rtc_base/strings/string_builder.h"
 
 namespace webrtc {
 namespace {
 
 template <class T>
-void ToStringIfSet(SimpleStringBuilder* result,
+void ToStringIfSet(StringBuilder* result,
                    const char* key,
                    const std::optional<T>& val) {
   if (val) {
@@ -40,7 +39,7 @@ const char *AudioProcessingModeToString(AudioProcessingMode mode) {
   return "auto";
 }
 
-void AudioProcessingModeToStringIfSet(SimpleStringBuilder *result, const char *key,
+void AudioProcessingModeToStringIfSet(StringBuilder *result, const char *key,
                                       const std::optional<AudioProcessingMode> &val) {
   if (val) {
     (*result) << key << ": " << AudioProcessingModeToString(*val) << ", ";
@@ -63,7 +62,10 @@ void AudioOptions::SetAll(const AudioOptions& change) {
   SetFrom(&echo_cancellation, change.echo_cancellation);
   SetFrom(&echo_cancellation_mode, change.echo_cancellation_mode);
 #if defined(WEBRTC_IOS)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
   SetFrom(&ios_force_software_aec_HACK, change.ios_force_software_aec_HACK);
+#pragma clang diagnostic pop
 #endif
   SetFrom(&auto_gain_control, change.auto_gain_control);
   SetFrom(&auto_gain_control_mode, change.auto_gain_control_mode);
@@ -86,7 +88,10 @@ void AudioOptions::SetAll(const AudioOptions& change) {
 bool AudioOptions::operator==(const AudioOptions& o) const {
   return echo_cancellation == o.echo_cancellation && echo_cancellation_mode == o.echo_cancellation_mode &&
 #if defined(WEBRTC_IOS)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
          ios_force_software_aec_HACK == o.ios_force_software_aec_HACK &&
+#pragma clang diagnostic pop
 #endif
          auto_gain_control == o.auto_gain_control && auto_gain_control_mode == o.auto_gain_control_mode &&
          noise_suppression == o.noise_suppression && noise_suppression_mode == o.noise_suppression_mode &&
@@ -100,14 +105,16 @@ bool AudioOptions::operator==(const AudioOptions& o) const {
 }
 
 std::string AudioOptions::ToString() const {
-  char buffer[1024];
-  SimpleStringBuilder result(buffer);
+  StringBuilder result;
   result << "AudioOptions {";
   ToStringIfSet(&result, "aec", echo_cancellation);
   AudioProcessingModeToStringIfSet(&result, "aec_mode", echo_cancellation_mode);
 #if defined(WEBRTC_IOS)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
   ToStringIfSet(&result, "ios_force_software_aec_HACK",
                 ios_force_software_aec_HACK);
+#pragma clang diagnostic pop
 #endif
   ToStringIfSet(&result, "agc", auto_gain_control);
   AudioProcessingModeToStringIfSet(&result, "agc_mode", auto_gain_control_mode);
@@ -125,7 +132,7 @@ std::string AudioOptions::ToString() const {
   ToStringIfSet(&result, "audio_network_adaptor", audio_network_adaptor);
   ToStringIfSet(&result, "init_recording_on_send", init_recording_on_send);
   result << "}";
-  return result.str();
+  return result.Release();
 }
 
 }  // namespace webrtc

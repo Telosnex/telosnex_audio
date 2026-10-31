@@ -534,6 +534,17 @@ jobs:
           echo "CHROME_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
           echo "FIREFOX_EXECUTABLE=$(command -v firefox)" >> "$GITHUB_ENV"
 
+      # flutter test also runs the build hook for the host. It uses the
+      # prebuilt files when the source key matches native_artifacts; after a
+      # native change, before its Kiln release, it builds from source and
+      # needs the audio headers (CMakeLists.txt) and Ninja.
+      - name: Native build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends libasound2-dev libpulse-dev ninja-build
+
       # Firefox on Linux starts no AudioContext without a sound server (it
       # stays suspended, as if waiting for a click). A PulseAudio null sink,
       # as in the Linux job's platform device step.
@@ -541,7 +552,6 @@ jobs:
         if: runner.os == 'Linux' && env.BROWSER == 'firefox'
         run: |
           set -euo pipefail
-          sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends pulseaudio pulseaudio-utils
           pulseaudio --start --exit-idle-time=-1
           pactl load-module module-null-sink sink_name=tsnx_null

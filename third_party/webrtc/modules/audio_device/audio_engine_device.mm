@@ -21,6 +21,8 @@
 
 #include <mach/mach_time.h>
 #include <cmath>
+#include <ios>
+#include <sstream>
 #include <optional>
 
 #include "api/array_view.h"
@@ -248,8 +250,9 @@ OSStatus AudioEngineDevice::objectListenerProc(AudioObjectID objectId, UInt32 nu
 
   // ptrThis->implObjectListenerProc(objectId, numberAddresses, addresses);
 
-  for (UInt32 i = 0; i < numberAddresses; i++) {
-    ptrThis->HandleDeviceListenerEvent(addresses[i].mSelector);
+  for (const AudioObjectPropertyAddress& address :
+       webrtc::ArrayView<const AudioObjectPropertyAddress>(addresses, numberAddresses)) {
+    ptrThis->HandleDeviceListenerEvent(address.mSelector);
   }
 
   return 0;

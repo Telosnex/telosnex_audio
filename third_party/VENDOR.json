@@ -1,9 +1,9 @@
 {
   "webrtc": {
     "url": "https://github.com/webrtc-sdk/webrtc.git",
-    "commit": "30d5e63ae91da483e06577b5c35ee91cc5e5c3db",
-    "third_party_commit": "a3b630c291f1cf3b711687b1c4be322d3015512e",
-    "files": 1167
+    "commit": "a802fa9849e0dae7f54c7d3deb05820a674b2f46",
+    "third_party_commit": "7c92732938de0ef7e28f5da231994723f938f407",
+    "files": 1190
   },
   "sonic": {
     "url": "https://github.com/waywardgeek/sonic.git",
