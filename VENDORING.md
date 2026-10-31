@@ -8,7 +8,7 @@ and how you update it.
 
 | Source | Upstream | Pin | Vendored |
 |---|---|---|---|
-| WebRTC | [webrtc-sdk/webrtc](https://github.com/webrtc-sdk/webrtc), branch `m144_release` | `webrtc.commit` | Audio processing, audio devices, and the `rtc_base` and `api` files that they include. No network code. |
+| WebRTC | [webrtc-sdk/webrtc](https://github.com/webrtc-sdk/webrtc), branch `m150_release` | `webrtc.commit` | Audio processing, audio devices, and the `rtc_base` and `api` files that they include. No network code. |
 | Chromium `third_party` | `chromium/src/third_party` | `webrtc.third_party_commit` | Abseil, PFFFT, RNNoise, Perfetto headers |
 | Sonic | [waywardgeek/sonic](https://github.com/waywardgeek/sonic), default branch | `sonic.commit` | `sonic.c`, `sonic.h` |
 | minimp3 | [lieff/minimp3](https://github.com/lieff/minimp3), default branch | `minimp3.commit` | `minimp3.h`, `minimp3_ex.h` |
@@ -40,14 +40,17 @@ removes these changes from the working tree.
 
 | Commit | Change |
 |---|---|
-| `57df0d8` | Hardware clock observations through `AudioTransport` |
-| `9c5135f` | No GCC-style ARM assembly in the denormal disabler under MSVC |
-| `05be966` | No vector subscripts in the AVX2 matched filter (MSVC) |
-| `766f987` | ALSA: 10 ms capture period with a 1 s ring |
-| `0305a3c` | ALSA: hardware clock observations |
-| `cb11c68` | macOS: start voice-processing capture once and sooner |
+| `e8b9876` | Hardware clock observations through `AudioTransport` |
+| `f9e003a` | No GCC-style ARM assembly in the denormal disabler under MSVC |
+| `b5e8e7c` | No vector subscripts in the AVX2 matched filter (MSVC) |
+| `55b376a` | ALSA: 10 ms capture period with a 1 s ring |
+| `817520b` | ALSA: hardware clock observations |
+| `e7515ba` | macOS: start voice-processing capture once and sooner |
+| `bb2901e` | `RtpPacketInfo` `operator==` defaulted in the class (MSVC) |
 
-When you add a local patch, add it to this table.
+When you add a local patch, add it to this table. Merge a vendor pull
+request with a merge commit, not a squash: a squash puts all patches into
+one commit, and the next update cannot apply them one at a time.
 
 ## How you know about an update
 
@@ -95,10 +98,17 @@ Do this when the pinned WebRTC branch has new commits. Commit
    ```sh
    git init src
    git -C src fetch --depth 1 https://github.com/webrtc-sdk/webrtc.git <new commit>
+   git -C src update-ref refs/heads/pin FETCH_HEAD
    git init src/third_party
-   git -C src/third_party fetch --depth 1 --filter=blob:none \
-     https://chromium.googlesource.com/chromium/src/third_party <third_party commit>
+   git -C src/third_party remote add origin \
+     https://chromium.googlesource.com/chromium/src/third_party
+   git -C src/third_party fetch --depth 1 --filter=blob:none origin <third_party commit>
    ```
+
+   Fetch WebRTC with its file contents (about 40 MB). With
+   `--filter=blob:none`, git gets each file that the vendor tool reads
+   separately, and the run takes many minutes instead of seconds.
+   `third_party` is large, so fetch it without contents.
 
 2. In `tool/vendor_manifest.json`, set `webrtc.commit` to the new commit.
    Get `webrtc.third_party_commit` from `DEPS` at the new commit.
@@ -127,11 +137,22 @@ Do this when LiveKit starts a newer `mNNN_release` branch.
    with the head of the new branch.
 3. Set `webrtc.branch` to the new branch, and
    `webrtc.watch.seen_milestone` to its number.
-4. If the vendor tool stops because a file moved, update the source lists
-   in `tool/vendor_manifest.json`.
+4. If the vendor tool stops because a listed source is missing, find
+   where the file went (`git -C src ls-tree -r --name-only HEAD`). Update
+   or remove it in `tool/vendor_manifest.json`.
+5. If the link fails with undefined symbols, upstream moved code into new
+   files. Find them with `git grep` in the clone, and add them to the
+   source lists.
+6. Look for API changes in the compile errors of `src/`.
 
-A new milestone can change many files. Expect more conflicts in the local
-patches.
+A new milestone can change many files. Expect conflicts in the local
+patches, and compile errors on MSVC that macOS does not show. Run
+Integration on a `ci/` or `vendor/` branch before you merge.
+
+The move from M144 to M150 (pull request #29) is an example. Upstream
+removed AECM (unused here), Abseil moved files, new files appeared in
+`modules/audio_processing/capture_mixer/`, `webrtc::ArrayView` became
+`std::span`, and MSVC needed one new local patch.
 
 ## Update Sonic or minimp3
 
