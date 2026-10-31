@@ -2,10 +2,10 @@
   "_comment": "Input for tool/vendor.dart. Sources are paths in the WebRTC checkout. Headers are found by following #include lines.",
   "webrtc": {
     "url": "https://github.com/webrtc-sdk/webrtc.git",
-    "commit": "30d5e63ae91da483e06577b5c35ee91cc5e5c3db",
-    "branch": "m144_release",
+    "commit": "a802fa9849e0dae7f54c7d3deb05820a674b2f46",
+    "branch": "m150_release",
     "third_party_url": "https://chromium.googlesource.com/chromium/src/third_party",
-    "third_party_commit": "a3b630c291f1cf3b711687b1c4be322d3015512e",
+    "third_party_commit": "7c92732938de0ef7e28f5da231994723f938f407",
     "include_roots": [
       "",
       "third_party/abseil-cpp",
@@ -89,7 +89,6 @@
         "common_audio/signal_processing/lpc_to_refl_coef.c",
         "common_audio/signal_processing/min_max_operations.c",
         "common_audio/signal_processing/randomization_functions.c",
-        "common_audio/signal_processing/real_fft.c",
         "common_audio/signal_processing/refl_coef_to_lpc.c",
         "common_audio/signal_processing/resample.c",
         "common_audio/signal_processing/resample_48khz.c",
@@ -165,7 +164,6 @@
         "modules/audio_processing/aec3/fullband_erle_estimator.cc",
         "modules/audio_processing/aec3/matched_filter.cc",
         "modules/audio_processing/aec3/matched_filter_lag_aggregator.cc",
-        "modules/audio_processing/aec3/moving_average.cc",
         "modules/audio_processing/aec3/multi_channel_content_detector.cc",
         "modules/audio_processing/aec3/refined_filter_update_gain.cc",
         "modules/audio_processing/aec3/render_buffer.cc",
@@ -190,9 +188,6 @@
         "modules/audio_processing/aec3/suppression_gain.cc",
         "modules/audio_processing/aec3/transparent_mode.cc",
         "modules/audio_processing/aec_dump/null_aec_dump_factory.cc",
-        "modules/audio_processing/aecm/aecm_core.cc",
-        "modules/audio_processing/aecm/aecm_core_c.cc",
-        "modules/audio_processing/aecm/echo_control_mobile.cc",
         "modules/audio_processing/agc/agc.cc",
         "modules/audio_processing/agc/agc_manager_direct.cc",
         "modules/audio_processing/agc/legacy/analog_agc.cc",
@@ -232,7 +227,6 @@
         "modules/audio_processing/audio_processing_impl.cc",
         "modules/audio_processing/capture_levels_adjuster/audio_samples_scaler.cc",
         "modules/audio_processing/capture_levels_adjuster/capture_levels_adjuster.cc",
-        "modules/audio_processing/echo_control_mobile_impl.cc",
         "modules/audio_processing/gain_control_impl.cc",
         "modules/audio_processing/gain_controller2.cc",
         "modules/audio_processing/high_pass_filter.cc",
@@ -257,8 +251,6 @@
         "modules/audio_processing/splitting_filter.cc",
         "modules/audio_processing/three_band_filter_bank.cc",
         "modules/audio_processing/utility/cascaded_biquad_filter.cc",
-        "modules/audio_processing/utility/delay_estimator.cc",
-        "modules/audio_processing/utility/delay_estimator_wrapper.cc",
         "modules/audio_processing/utility/pffft_wrapper.cc",
         "modules/audio_processing/vad/gmm.cc",
         "modules/audio_processing/vad/pitch_based_vad.cc",
@@ -328,7 +320,7 @@
         "third_party/abseil-cpp/absl/base/internal/strerror.cc",
         "third_party/abseil-cpp/absl/base/internal/sysinfo.cc",
         "third_party/abseil-cpp/absl/base/internal/thread_identity.cc",
-        "third_party/abseil-cpp/absl/base/internal/throw_delegate.cc",
+        "third_party/abseil-cpp/absl/base/throw_delegate.cc",
         "third_party/abseil-cpp/absl/base/internal/tracing.cc",
         "third_party/abseil-cpp/absl/base/internal/unscaledcycleclock.cc",
         "third_party/abseil-cpp/absl/base/log_severity.cc",
@@ -345,7 +337,6 @@
         "third_party/abseil-cpp/absl/crc/internal/crc_x86_arm_combined.cc",
         "third_party/abseil-cpp/absl/debugging/failure_signal_handler.cc",
         "third_party/abseil-cpp/absl/debugging/internal/address_is_readable.cc",
-        "third_party/abseil-cpp/absl/debugging/internal/borrowed_fixup_buffer.cc",
         "third_party/abseil-cpp/absl/debugging/internal/decode_rust_punycode.cc",
         "third_party/abseil-cpp/absl/debugging/internal/demangle.cc",
         "third_party/abseil-cpp/absl/debugging/internal/demangle_rust.cc",
@@ -424,7 +415,6 @@
         "third_party/abseil-cpp/absl/strings/str_cat.cc",
         "third_party/abseil-cpp/absl/strings/str_replace.cc",
         "third_party/abseil-cpp/absl/strings/str_split.cc",
-        "third_party/abseil-cpp/absl/strings/string_view.cc",
         "third_party/abseil-cpp/absl/strings/substitute.cc",
         "third_party/abseil-cpp/absl/synchronization/barrier.cc",
         "third_party/abseil-cpp/absl/synchronization/blocking_counter.cc",
@@ -464,8 +454,7 @@
         "common_audio/signal_processing/cross_correlation_neon.c",
         "common_audio/signal_processing/downsample_fast_neon.c",
         "common_audio/signal_processing/min_max_operations_neon.c",
-        "common_audio/third_party/ooura/fft_size_128/ooura_fft_neon.cc",
-        "modules/audio_processing/aecm/aecm_core_neon.cc"
+        "common_audio/third_party/ooura/fft_size_128/ooura_fft_neon.cc"
       ],
       "x64": [
         "common_audio/fir_filter_sse.cc",
@@ -529,7 +518,7 @@
       ]
     },
     "watch": {
-      "seen_milestone": 144,
+      "seen_milestone": 150,
       "ignore": []
     }
   },

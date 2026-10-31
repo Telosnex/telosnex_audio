@@ -21,18 +21,6 @@
 
 namespace webrtc {
 
-// Monotonic sample-clock observation supplied by hardware-backed audio device
-// modules. `position_frames` is an unwrapped hardware-domain frame position;
-// `generation` changes whenever recovery invalidates that position's origin.
-enum class AudioHardwareClockDirection { kPlayout, kCapture };
-struct AudioHardwareClockObservation {
-  AudioHardwareClockDirection direction;
-  int64_t monotonic_time_ns;
-  int64_t position_frames;
-  uint32_t sample_rate_hz;
-  uint32_t generation;
-};
-
 static const int kAdmMaxDeviceNameSize = 128;
 static const int kAdmMaxFileNameSize = 512;
 static const int kAdmMaxGuidSize = 128;
@@ -97,11 +85,6 @@ class AudioTransport {
                               void* audio_data,
                               int64_t* elapsed_time_ms,
                               int64_t* ntp_time_ms) = 0;
-
-  // Optional hardware-clock telemetry. Platform ADMs that cannot expose a
-  // stable hardware position simply never call this method.
-  virtual void OnAudioHardwareClockObservation(
-      const AudioHardwareClockObservation& observation) {}
 
  protected:
   virtual ~AudioTransport() {}
@@ -170,8 +153,7 @@ class AudioParameters {
     return static_cast<double>(frames_per_buffer_) / (sample_rate_);
   }
   std::string ToString() const {
-    char ss_buf[1024];
-    SimpleStringBuilder ss(ss_buf);
+    StringBuilder ss;
     ss << "AudioParameters: ";
     ss << "sample_rate=" << sample_rate() << ", channels=" << channels();
     ss << ", frames_per_buffer=" << frames_per_buffer();
@@ -180,7 +162,7 @@ class AudioParameters {
     ss << ", bytes_per_buffer=" << GetBytesPerBuffer();
     ss << ", bytes_per_10ms_buffer=" << GetBytesPer10msBuffer();
     ss << ", size_in_ms=" << GetBufferSizeInMilliseconds();
-    return ss.str();
+    return ss.Release();
   }
 
  private:

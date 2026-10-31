@@ -20,10 +20,8 @@ namespace {
 #define WEBRTC_DENORMAL_DISABLER_X86_SUPPORTED
 #endif
 
-// TSNX: the ARM path is GCC-style inline assembly, which MSVC (Windows on
-// ARM) does not accept.
 #if defined(WEBRTC_DENORMAL_DISABLER_X86_SUPPORTED) || \
-    (defined(WEBRTC_ARCH_ARM_FAMILY) && (defined(__clang__) || defined(__GNUC__)))
+    defined(WEBRTC_ARCH_ARM_FAMILY)
 #define WEBRTC_DENORMAL_DISABLER_SUPPORTED
 #endif
 

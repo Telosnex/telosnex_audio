@@ -54,11 +54,6 @@ namespace adm_linux_alsa {
   X(snd_pcm_set_params)                        \
   X(snd_pcm_get_params)                        \
   X(snd_pcm_start)                             \
-  X(snd_pcm_status)                            \
-  X(snd_pcm_status_malloc)                     \
-  X(snd_pcm_status_free)                       \
-  X(snd_pcm_status_get_state)                  \
-  X(snd_pcm_status_get_delay)                  \
   X(snd_pcm_stream)                            \
   X(snd_pcm_frames_to_bytes)                   \
   X(snd_pcm_bytes_to_frames)                   \
@@ -83,7 +78,6 @@ namespace adm_linux_alsa {
   X(snd_pcm_hw_params_set_channels)            \
   X(snd_pcm_hw_params_set_rate_near)           \
   X(snd_pcm_hw_params_set_buffer_size_near)    \
-  X(snd_pcm_hw_params_set_period_size_near)    \
   X(snd_card_next)                             \
   X(snd_card_get_name)                         \
   X(snd_config_update)                         \

@@ -10,6 +10,7 @@
 
 #include "modules/audio_device/audio_device_buffer.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -53,7 +54,7 @@ AudioDeviceBuffer::AudioDeviceBuffer(const Environment& env,
     : env_(env),
       task_queue_(env_.task_queue_factory().CreateTaskQueue(
           kTimerQueueName,
-          TaskQueueFactory::Priority::NORMAL)),
+          TaskQueueFactory::Priority::kNormal)),
       audio_transport_cb_(nullptr),
       rec_sample_rate_(0),
       play_sample_rate_(0),
@@ -342,12 +343,6 @@ int32_t AudioDeviceBuffer::DeliverRecordedData() {
   return 0;
 }
 
-void AudioDeviceBuffer::DeliverHardwareClockObservation(
-    const AudioHardwareClockObservation& observation) {
-  if (audio_transport_cb_)
-    audio_transport_cb_->OnAudioHardwareClockObservation(observation);
-}
-
 int32_t AudioDeviceBuffer::RequestPlayoutData(size_t samples_per_channel) {
   TRACE_EVENT1("webrtc", "AudioDeviceBuffer::RequestPlayoutData",
                "samples_per_channel", samples_per_channel);
@@ -527,9 +522,8 @@ void AudioDeviceBuffer::LogStats(LogState state) {
   }
   last_stats_ = stats;
 
-  int64_t time_to_wait_ms =
-      next_callback_time - env_.clock().TimeInMilliseconds();
-  RTC_DCHECK_GT(time_to_wait_ms, 0) << "Invalid timer interval";
+  int64_t time_to_wait_ms = std::max<int64_t>(
+      next_callback_time - env_.clock().TimeInMilliseconds(), 0);
 
   // Keep posting new (delayed) tasks until state is changed to kLogStop.
   task_queue_->PostDelayedTask(

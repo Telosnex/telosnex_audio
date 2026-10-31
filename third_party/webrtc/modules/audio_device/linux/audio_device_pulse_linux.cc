@@ -33,8 +33,11 @@
 #endif
 
 WebRTCPulseSymbolTable* GetPulseSymbolTable() {
-  static WebRTCPulseSymbolTable* pulse_symbol_table =
-      new WebRTCPulseSymbolTable();
+  static WebRTCPulseSymbolTable* pulse_symbol_table = []() {
+    auto* table = new WebRTCPulseSymbolTable();
+    table->Load();
+    return table;
+  }();
   return pulse_symbol_table;
 }
 
@@ -1586,7 +1589,7 @@ int32_t AudioDeviceLinuxPulse::InitPulseAudio() {
   int retVal = 0;
 
   // Load libpulse
-  if (!GetPulseSymbolTable()->Load()) {
+  if (!GetPulseSymbolTable()->IsLoaded()) {
     // Most likely the Pulse library and sound server are not installed on
     // this system
     RTC_LOG(LS_ERROR) << "failed to load symbol table";
@@ -2391,7 +2394,7 @@ bool AudioDeviceLinuxPulse::RecThreadProcess() {
         break;
       }
 
-      // Drop lock for sigslot dispatch, which could take a while.
+      // Drop lock for recorded audio handling, which could take a while.
       PaUnLock();
       // Read data and provide it to VoiceEngine
       if (ReadRecordedData(sampleData, sampleDataSize) == -1) {

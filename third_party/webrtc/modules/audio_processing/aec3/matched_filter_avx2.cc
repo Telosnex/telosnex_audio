@@ -12,13 +12,12 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <span>
 
-#include "api/array_view.h"
 #include "modules/audio_processing/aec3/matched_filter.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
-namespace aec3 {
 
 // Let ha denote the horizontal of a, and hb the horizontal sum of b
 // returns [ha, hb, ha, hb]
@@ -35,13 +34,13 @@ inline __m128 hsum_ab(__m256 a, __m256 b) {
 void MatchedFilterCore_AccumulatedError_AVX2(size_t x_start_index,
                                              float x2_sum_threshold,
                                              float smoothing,
-                                             ArrayView<const float> x,
-                                             ArrayView<const float> y,
-                                             ArrayView<float> h,
+                                             std::span<const float> x,
+                                             std::span<const float> y,
+                                             std::span<float> h,
                                              bool* filters_updated,
                                              float* error_sum,
-                                             ArrayView<float> accumulated_error,
-                                             ArrayView<float> scratch_memory) {
+                                             std::span<float> accumulated_error,
+                                             std::span<float> scratch_memory) {
   const int h_size = static_cast<int>(h.size());
   const int x_size = static_cast<int>(x.size());
   RTC_DCHECK_EQ(0, h_size % 16);
@@ -83,20 +82,14 @@ void MatchedFilterCore_AccumulatedError_AVX2(size_t x_start_index,
       s_inst_256_8 = _mm256_mul_ps(h_k_8, x_k_8);
       s_inst_hadd_256 = _mm256_hadd_ps(s_inst_256, s_inst_256_8);
       s_inst_hadd_256 = _mm256_hadd_ps(s_inst_hadd_256, s_inst_hadd_256);
-      // TSNX: vector subscripts are a GCC/Clang extension; MSVC needs
-      // stores and loads. Same arithmetic, same order.
-      alignas(32) float hadd[8];
-      _mm256_store_ps(hadd, s_inst_hadd_256);
-      alignas(16) float e[4];
-      s_acum += hadd[0];
-      e[0] = s_acum - y[i];
-      s_acum += hadd[4];
-      e[1] = s_acum - y[i];
-      s_acum += hadd[1];
-      e[2] = s_acum - y[i];
-      s_acum += hadd[5];
-      e[3] = s_acum - y[i];
-      e_128 = _mm_load_ps(e);
+      s_acum += s_inst_hadd_256[0];
+      e_128[0] = s_acum - y[i];
+      s_acum += s_inst_hadd_256[4];
+      e_128[1] = s_acum - y[i];
+      s_acum += s_inst_hadd_256[1];
+      e_128[2] = s_acum - y[i];
+      s_acum += s_inst_hadd_256[5];
+      e_128[3] = s_acum - y[i];
 
       __m128 acum_error = _mm_loadu_ps(a_p);
       acum_error = _mm_fmadd_ps(e_128, e_128, acum_error);
@@ -147,14 +140,14 @@ void MatchedFilterCore_AccumulatedError_AVX2(size_t x_start_index,
 void MatchedFilterCore_AVX2(size_t x_start_index,
                             float x2_sum_threshold,
                             float smoothing,
-                            ArrayView<const float> x,
-                            ArrayView<const float> y,
-                            ArrayView<float> h,
+                            std::span<const float> x,
+                            std::span<const float> y,
+                            std::span<float> h,
                             bool* filters_updated,
                             float* error_sum,
                             bool compute_accumulated_error,
-                            ArrayView<float> accumulated_error,
-                            ArrayView<float> scratch_memory) {
+                            std::span<float> accumulated_error,
+                            std::span<float> scratch_memory) {
   if (compute_accumulated_error) {
     return MatchedFilterCore_AccumulatedError_AVX2(
         x_start_index, x2_sum_threshold, smoothing, x, y, h, filters_updated,
@@ -217,10 +210,8 @@ void MatchedFilterCore_AVX2(size_t x_start_index,
     x2_sum_256 = _mm256_add_ps(x2_sum_256, x2_sum_256_8);
     s_256 = _mm256_add_ps(s_256, s_256_8);
     __m128 sum = hsum_ab(x2_sum_256, s_256);
-    alignas(16) float sums[4];  // TSNX: see above.
-    _mm_store_ps(sums, sum);
-    x2_sum += sums[0];
-    s += sums[1];
+    x2_sum += sum[0];
+    s += sum[1];
 
     // Compute the matched filter error.
     float e = y[i] - s;
@@ -267,5 +258,4 @@ void MatchedFilterCore_AVX2(size_t x_start_index,
   }
 }
 
-}  // namespace aec3
 }  // namespace webrtc
