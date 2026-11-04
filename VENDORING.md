@@ -54,8 +54,9 @@ one commit, and the next update cannot apply them one at a time.
 
 ## How you know about an update
 
-The `Vendor watch` workflow (`.github/workflows/vendor_watch.yml`) runs
-`.github/vendor_watch.dart` every day. The run fails when it finds one of
+The `Upstream watch` workflow (`.github/workflows/upstream_watch.yml`, from
+telosnex_ci_tools) runs `.github/vendor_watch.dart` every day, as listed in
+`.github/upstream.yaml`. The run fails when it finds one of
 these updates:
 
 | Finding | What to do |
@@ -66,7 +67,7 @@ these updates:
 | The Chromium `third_party` pin is not the one in `DEPS` | Set `webrtc.third_party_commit` to the commit in `DEPS`, then vendor again |
 
 GitHub sends an email for a failed scheduled run to the person who last
-changed the workflow file. The job summary lists each finding with its
+changed `.github/workflows/upstream_watch.yml`. The job summary lists each finding with its
 commits.
 
 To run the check on your computer, use `gh` with a login:

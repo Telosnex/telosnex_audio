@@ -18,7 +18,7 @@
 //
 // It ignores commits listed in "watch": {"ignore": [...]} of a source.
 // It exits 1 if it finds one of these, so the scheduled workflow
-// (.github/workflows/vendor_watch.yml) fails and GitHub sends an email.
+// (.github/workflows/upstream_watch.yml) fails and GitHub sends an email.
 // VENDORING.md tells you what to do about each one.
 import 'dart:convert';
 import 'dart:io';
