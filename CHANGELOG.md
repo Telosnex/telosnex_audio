@@ -1,4 +1,4 @@
-## Unreleased
+## 0.1.2
 
 - `TelosnexAudio.microphonePermission()` and
   `TelosnexAudio.requestMicrophonePermission()`. Since WebRTC M144 the Apple
