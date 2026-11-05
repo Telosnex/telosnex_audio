@@ -1,3 +1,15 @@
+## Unreleased
+
+- `TelosnexAudio.microphonePermission()` and
+  `TelosnexAudio.requestMicrophonePermission()`. Since WebRTC M144 the Apple
+  audio engine no longer asks for the microphone itself, so on iOS capture
+  failed with a device error when the app had not asked. Ask with
+  `requestMicrophonePermission()` before `startCapture`.
+- `startCapture` without the microphone permission fails with
+  `AudioEngineException.noMicrophonePermission` (-9) on iOS, Android, macOS
+  with Apple voice processing, and the web, instead of a device error or a
+  browser exception.
+
 ## 0.1.1
 
 - WebRTC audio processing from webrtc-sdk `m150_release` (was

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "engine.h"
+#include "permission.h"
 #include "tsnx_audio.h"
 #include "util/dart_cobject.h"
 
@@ -239,6 +240,22 @@ TSNX_EXPORT int32_t tsnx_track_format(tsnx_engine* e, int32_t id,
 }
 TSNX_EXPORT int32_t tsnx_track_dispose(tsnx_engine* e, int32_t id) {
   return E(e) ? E(e)->DisposeTrack(id) : TSNX_ERR_INVALID_ARGUMENT;
+}
+
+TSNX_EXPORT int32_t tsnx_mic_permission(void) {
+  return tsnx::permission::Status();
+}
+
+TSNX_EXPORT int32_t tsnx_mic_permission_request(int64_t port,
+                                                tsnx_post_cobject_fn post) {
+  if (!post) return TSNX_ERR_INVALID_ARGUMENT;
+  tsnx::permission::Request([port, post](int32_t status) {
+    tsnx::DartCObject message;
+    message.type = tsnx::kDartCObjectInt64;
+    message.value.as_int64 = status;
+    post(port, &message);  // false if the isolate is gone: dropped
+  });
+  return TSNX_OK;
 }
 
 TSNX_EXPORT int32_t tsnx_capture_start(tsnx_engine* e, int32_t rate,

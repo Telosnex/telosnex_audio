@@ -2,6 +2,8 @@
 // the native library that the build hook made for the device (desktop, iOS
 // simulator, Android emulator). They use ManualDevice, so they need no audio
 // hardware: CI runners and emulators have none that the engine can rely on.
+// The microphone permission group opens the platform device only where
+// capture must fail before it reaches the device.
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -39,4 +41,47 @@ void main() {
       spillDir: spill.path,
     ),
   );
+
+  group('microphone permission', () {
+    test('status, and a request that needs no prompt', () async {
+      final status = await TelosnexAudio.microphonePermission();
+      if (Platform.isLinux || Platform.isWindows) {
+        expect(status, MicrophonePermission.granted);
+      }
+      if (status == MicrophonePermission.notDetermined) {
+        markTestSkipped('$status: a request would show the prompt');
+        return;
+      }
+      expect(await TelosnexAudio.requestMicrophonePermission(), status);
+    });
+
+    // Since WebRTC M144 the Apple voice-processing device no longer asks;
+    // without the permission, capture fails at once with a clear code.
+    test('capture without it fails with noMicrophonePermission', () async {
+      final status = await TelosnexAudio.microphonePermission();
+      final checked = Platform.isIOS || Platform.isMacOS || Platform.isAndroid;
+      if (!checked || status == MicrophonePermission.granted) {
+        markTestSkipped('$status on ${Platform.operatingSystem}');
+        return;
+      }
+      final engine = await TelosnexAudio.open(
+        device: const PlatformDevice(appleVoiceProcessing: true),
+        spillDir: spill.path,
+      );
+      try {
+        await expectLater(
+          engine.startCapture(const CaptureConfig(sampleRate: 48000)),
+          throwsA(
+            isA<AudioEngineException>().having(
+              (e) => e.code,
+              'code',
+              AudioEngineException.noMicrophonePermission,
+            ),
+          ),
+        );
+      } finally {
+        await engine.close();
+      }
+    });
+  });
 }

@@ -127,10 +127,31 @@ final class TrackFullError extends StateError {
 
 final class AudioEngineException implements Exception {
   const AudioEngineException(this.code, this.message);
+
+  /// [code] of [AudioEngine.startCapture] when the app may not use the
+  /// microphone: see [MicrophonePermission].
+  static const int noMicrophonePermission = -9;
+
   final int code;
   final String message;
   @override
   String toString() => 'AudioEngineException($code): $message';
+}
+
+/// Whether the app may use the microphone (`TelosnexAudio.
+/// microphonePermission`).
+enum MicrophonePermission {
+  /// Capture may start.
+  granted,
+
+  /// The user said no, or (iOS, macOS) a policy forbids it. Only the
+  /// system settings change it.
+  denied,
+
+  /// Not asked yet: `TelosnexAudio.requestMicrophonePermission` shows the
+  /// system prompt. On Android, any permission that is not granted, as
+  /// Android does not say whether the prompt would show.
+  notDetermined,
 }
 
 /// The audio device behind an engine.

@@ -1,9 +1,11 @@
 package com.telosnex.audio;
 
+import android.Manifest;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
@@ -83,6 +85,14 @@ final class AudioRoutes {
     }
 
     private static native void nativeDevicesChanged();
+
+    /** The app has RECORD_AUDIO. True before attach: the engine finds out. */
+    static boolean micGranted() {
+        Context c = appContext;
+        return c == null
+                || c.checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                        == PackageManager.PERMISSION_GRANTED;
+    }
 
     /** One record per device: "id\ttype\tsink\tname\taddress\n". */
     static String devices() {

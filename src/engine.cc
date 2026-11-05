@@ -29,6 +29,7 @@
 #include "util/dart_cobject.h"
 #include "util/utf8_path.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
+#include "permission.h"
 #if defined(__APPLE__)
 #include "apple/apple_devices.h"
 #include "apple/mac_devices.h"
@@ -780,9 +781,21 @@ double Engine::EchoReturnLossEnhancement() const {
 
 // ---- Capture control and devices -----------------------------------------
 
+// False when capture would fail for want of the microphone permission.
+// iOS and macOS voice processing (AudioEngineDevice) check it and fail
+// since M144 instead of asking; the macOS CoreAudio device still gets the
+// system's prompt. Android's AAudio input fails without RECORD_AUDIO.
+bool Engine::MicrophoneAllowed() const {
+#if defined(__APPLE__)
+  if (!config_.platform_voice_processing) return true;
+#endif
+  return permission::Status() == permission::kGranted;
+}
+
 int32_t Engine::StartCapture(int32_t rate, int32_t request_id) {
   if (rate < 8000 || rate > 48000 || rate % 100 != 0)
     return kErrInvalidArgument;
+  if (!config_.manual_device && !MicrophoneAllowed()) return kErrPermission;
   capture_rate_.store(rate);
   if (!servo_hold_) {
     auto snapshot = clock_->Read(/*capture=*/true);

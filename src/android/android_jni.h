@@ -25,6 +25,10 @@ std::string Devices();
 // or does not change the route in time.
 bool SetCommunication(int device_id, int type, int timeout_ms);
 
+// AudioRoutes.micGranted(): 1 if the app has RECORD_AUDIO, 0 if not, -1
+// before the plugin loaded the library. Any thread.
+int MicGranted();
+
 // Moves when Android adds or removes an audio device.
 uint32_t DevicesGeneration();
 

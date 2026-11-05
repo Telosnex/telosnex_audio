@@ -21,7 +21,12 @@ Future<void> main() async {
   track.setRate(1.25);
   track.play();
 
-  // Capture: echo-cancelled against what the engine plays.
+  // Capture: echo-cancelled against what the engine plays. Ask for the
+  // microphone first (see below).
+  if (await TelosnexAudio.requestMicrophonePermission() !=
+      MicrophonePermission.granted) {
+    return;
+  }
   engine.capture.listen((frame) => send(frame.pcm));
   await engine.startCapture(const CaptureConfig());
 }
@@ -33,6 +38,29 @@ Future<void> main() async {
   and `createMp3Track` for MP3 bytes.
 - **Devices:** `inputs`, `outputs`, `selectInput`, `selectOutput`, and
   `routeChanges` when headphones come and go.
+
+## Microphone permission
+
+The engine does not ask for the microphone: call
+`TelosnexAudio.requestMicrophonePermission()` before `startCapture`, when it
+suits your app. It shows the system prompt if the user has not answered yet,
+and returns `granted`, `denied` or `notDetermined`.
+`TelosnexAudio.microphonePermission()` reads the state without asking.
+Without the permission, `startCapture` fails with an
+`AudioEngineException` whose code is
+`AudioEngineException.noMicrophonePermission` (iOS, Android, macOS with
+Apple voice processing, the web).
+
+The app declares the permission:
+
+- iOS and macOS: `NSMicrophoneUsageDescription` in `Info.plist`. A
+  sandboxed macOS app also needs the
+  `com.apple.security.device.audio-input` entitlement.
+- Android: `<uses-permission android:name="android.permission.RECORD_AUDIO" />`
+  in the app's manifest. On Android, the request needs the activity and the
+  root isolate.
+
+Linux and Windows have no per-app prompt; the request returns `granted`.
 
 The native libraries are prebuilt for every target
 ([Kiln](https://pub.dev/packages/kiln)): the build hook downloads the one
