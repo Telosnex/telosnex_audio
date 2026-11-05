@@ -13,6 +13,7 @@ std::atomic<JavaVM*> g_vm{nullptr};
 jclass g_routes = nullptr;  // global ref, set before g_vm
 jmethodID g_devices = nullptr;
 jmethodID g_set_communication = nullptr;
+jmethodID g_mic_granted = nullptr;
 std::atomic<uint32_t> g_generation{1};
 
 void JNICALL DevicesChanged(JNIEnv*, jclass) {
@@ -82,6 +83,14 @@ bool SetCommunication(int device_id, int type, int timeout_ms) {
   return ok == JNI_TRUE;
 }
 
+int MicGranted() {
+  Env env;
+  if (!env.get()) return -1;
+  const jboolean ok = env.get()->CallStaticBooleanMethod(g_routes, g_mic_granted);
+  if (env.Failed("micGranted")) return -1;
+  return ok == JNI_TRUE ? 1 : 0;
+}
+
 uint32_t DevicesGeneration() {
   return g_generation.load(std::memory_order_relaxed);
 }
@@ -104,10 +113,11 @@ extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void*) {
   g_devices = env->GetStaticMethodID(c, "devices", "()Ljava/lang/String;");
   g_set_communication =
       env->GetStaticMethodID(c, "setCommunication", "(III)Z");
+  g_mic_granted = env->GetStaticMethodID(c, "micGranted", "()Z");
   static const JNINativeMethod kNatives[] = {
       {"nativeDevicesChanged", "()V",
        reinterpret_cast<void*>(&DevicesChanged)}};
-  if (!g_devices || !g_set_communication ||
+  if (!g_devices || !g_set_communication || !g_mic_granted ||
       env->RegisterNatives(c, kNatives, 1) != JNI_OK) {
     env->ExceptionClear();
     RTC_LOG(LS_ERROR) << "AudioRoutes does not match the native library";

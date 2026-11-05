@@ -41,6 +41,72 @@ String _assetUrl(String file) => webRuntimeUrl(file, test: _testAssets);
 bool get engineSupported =>
     globalContext.has('AudioWorkletNode') && globalContext.has('WebAssembly');
 
+Future<MicrophonePermission> microphonePermission() async {
+  final permissions = web.window.navigator.permissions;
+  try {
+    final status = await permissions
+        .query(JSObject()..['name'] = 'microphone'.toJS)
+        .toDart;
+    return switch (status.state) {
+      'granted' => MicrophonePermission.granted,
+      'denied' => MicrophonePermission.denied,
+      _ => MicrophonePermission.notDetermined,
+    };
+  } catch (_) {
+    // A browser without the "microphone" permission name.
+    return MicrophonePermission.notDetermined;
+  }
+}
+
+Future<MicrophonePermission> requestMicrophonePermission() async {
+  final (stream, error) = await _getUserMedia(
+    web.MediaStreamConstraints(audio: true.toJS),
+  );
+  if (stream != null) {
+    for (final t in stream.getTracks().toDart) {
+      t.stop();
+    }
+    return MicrophonePermission.granted;
+  }
+  if (_isPermissionError(error)) return MicrophonePermission.denied;
+  throw AudioEngineException(
+    -4,
+    'requestMicrophonePermission: getUserMedia failed: $error',
+  );
+}
+
+/// getUserMedia: the stream, or the name of the error (a DOMException's
+/// name). The rejection is read in JS: what a caught JS error looks like in
+/// Dart differs between dart2js and dart2wasm.
+Future<(web.MediaStream?, String?)> _getUserMedia(
+  web.MediaStreamConstraints constraints,
+) {
+  final navigator = web.window.navigator as JSObject;
+  // Pages that are not a secure context have no mediaDevices.
+  if (!navigator.has('mediaDevices')) {
+    return Future.value((null, 'SecurityError'));
+  }
+  final done = Completer<(web.MediaStream?, String?)>();
+  web.window.navigator.mediaDevices
+      .getUserMedia(constraints)
+      .callMethod<JSAny?>(
+        'then'.toJS,
+        ((web.MediaStream s) => done.complete((s, null))).toJS,
+        ((JSAny? reason) {
+          var name = 'Error';
+          if (reason.isA<JSObject>()) {
+            final n = (reason! as JSObject)['name'];
+            if (n.isA<JSString>()) name = (n! as JSString).toDart;
+          }
+          done.complete((null, name));
+        }).toJS,
+      );
+  return done.future;
+}
+
+bool _isPermissionError(String? name) =>
+    name == 'NotAllowedError' || name == 'SecurityError';
+
 Future<AudioEngine> openEngine({
   required EngineDevice device,
   required AudioProcessingConfig processing,
@@ -80,6 +146,7 @@ String _errorText(int code) => switch (code) {
   -4 => 'device error',
   -5 => 'unsupported format',
   -6 => 'command queue full',
+  -9 => 'no microphone permission',
   _ => 'error $code',
 };
 
@@ -606,7 +673,14 @@ final class _WebEngine implements AudioEngine {
     }
     _capturing = true;
     final ctx = _ctx;
-    if (ctx != null && _mic == null) await _openMic(ctx);
+    if (ctx != null && _mic == null) {
+      try {
+        await _openMic(ctx);
+      } catch (_) {
+        _capturing = false;
+        rethrow;
+      }
+    }
     _send(_msg('capture', {'rate': rate}));
   }
 
@@ -619,9 +693,18 @@ final class _WebEngine implements AudioEngine {
     if (input != null && input != 'default') {
       audio['deviceId'] = (JSObject()..['exact'] = input.toJS);
     }
-    final stream = await web.window.navigator.mediaDevices
-        .getUserMedia(web.MediaStreamConstraints(audio: audio))
-        .toDart;
+    final (opened, error) = await _getUserMedia(
+      web.MediaStreamConstraints(audio: audio),
+    );
+    if (opened == null) {
+      throw _isPermissionError(error)
+          ? const AudioEngineException(
+              AudioEngineException.noMicrophonePermission,
+              'startCapture: no microphone permission',
+            )
+          : AudioEngineException(-4, 'startCapture: getUserMedia: $error');
+    }
+    final stream = opened;
     if (_closed) {
       _stopStream(stream);
       return;

@@ -2,5 +2,6 @@
 -keep class com.telosnex.audio.AudioRoutes {
     static java.lang.String devices();
     static boolean setCommunication(int, int, int);
+    static boolean micGranted();
     static native void nativeDevicesChanged();
 }

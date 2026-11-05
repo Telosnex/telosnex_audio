@@ -122,6 +122,15 @@ class _ExamplePageState extends State<ExamplePage> {
                     if (_capturing) {
                       await engine.stopCapture();
                     } else {
+                      final messenger = ScaffoldMessenger.of(context);
+                      final permission =
+                          await TelosnexAudio.requestMicrophonePermission();
+                      if (permission != MicrophonePermission.granted) {
+                        messenger.showSnackBar(
+                          SnackBar(content: Text('Microphone: $permission')),
+                        );
+                        return;
+                      }
                       await engine.startCapture(
                         const CaptureConfig(sampleRate: 24000),
                       );

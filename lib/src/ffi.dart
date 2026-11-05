@@ -67,6 +67,20 @@ final class TsnxEngine extends Opaque {}
 @Native<Pointer<Utf8> Function()>(symbol: 'tsnx_version', isLeaf: true)
 external Pointer<Utf8> tsnxVersion();
 
+@Native<Int32 Function()>(symbol: 'tsnx_mic_permission', isLeaf: true)
+external int tsnxMicPermission();
+
+@Native<
+  Int32 Function(
+    Int64,
+    Pointer<NativeFunction<Bool Function(Int64, Pointer<Void>)>>,
+  )
+>(symbol: 'tsnx_mic_permission_request')
+external int tsnxMicPermissionRequest(
+  int port,
+  Pointer<NativeFunction<Bool Function(Int64, Pointer<Void>)>> post,
+);
+
 @Native<
   Int32 Function(Pointer<TsnxEngineConfig>, Pointer<Pointer<TsnxEngine>>)
 >(symbol: 'tsnx_engine_open')

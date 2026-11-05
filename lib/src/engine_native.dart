@@ -6,6 +6,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/services.dart';
 import 'package:meta/meta.dart';
 
 import 'ffi.dart';
@@ -35,6 +36,70 @@ Future<AudioEngine> openEngine({
     );
   }
   return _NativeEngine.open(device, processing, spillDir);
+}
+
+// Android asks through the plugin (android/): the prompt needs the activity.
+const _permissionChannel = MethodChannel('telosnex_audio/permission');
+
+MicrophonePermission _permissionFromNative(int status) => switch (status) {
+  0 => MicrophonePermission.granted,
+  1 => MicrophonePermission.denied,
+  _ => MicrophonePermission.notDetermined,
+};
+
+MicrophonePermission _permissionFromChannel(String? answer) =>
+    MicrophonePermission.values.firstWhere(
+      (p) => p.name == answer,
+      orElse: () => throw PlatformException(
+        code: 'bad_answer',
+        message: 'telosnex_audio/permission answered $answer',
+      ),
+    );
+
+bool get _askable => Platform.isIOS || Platform.isMacOS || Platform.isAndroid;
+
+Future<MicrophonePermission> microphonePermission() async {
+  if (!_askable) return MicrophonePermission.granted;
+  if (Platform.isAndroid) {
+    return _permissionFromChannel(
+      await _permissionChannel.invokeMethod<String>('status'),
+    );
+  }
+  _requireEngine();
+  return _permissionFromNative(tsnxMicPermission());
+}
+
+Future<MicrophonePermission> requestMicrophonePermission() async {
+  if (!_askable) return MicrophonePermission.granted;
+  if (Platform.isAndroid) {
+    return _permissionFromChannel(
+      await _permissionChannel.invokeMethod<String>('request'),
+    );
+  }
+  _requireEngine();
+  final answer = Completer<int>();
+  final port = RawReceivePort(
+    (Object? m) => answer.complete(m! as int),
+    'telosnex_audio permission',
+  );
+  try {
+    final rc = tsnxMicPermissionRequest(
+      port.sendPort.nativePort,
+      NativeApi.postCObject.cast(),
+    );
+    _check(rc, 'requestMicrophonePermission');
+    return _permissionFromNative(await answer.future);
+  } finally {
+    port.close();
+  }
+}
+
+void _requireEngine() {
+  if (!engineSupported) {
+    throw UnsupportedError(
+      'telosnex_audio has no native engine for this build',
+    );
+  }
 }
 
 /// The native engine behind [engine], for tests that drive the C API.
@@ -69,6 +134,7 @@ String _errorText(int code) => switch (code) {
   -5 => 'unsupported format',
   -6 => 'command queue full',
   -8 => 'unsupported platform',
+  -9 => 'no microphone permission (TelosnexAudio.requestMicrophonePermission)',
   _ => 'error $code',
 };
 

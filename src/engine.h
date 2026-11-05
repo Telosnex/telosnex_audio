@@ -107,6 +107,7 @@ enum EngineError : int32_t {
   kErrQueueFull = -6,
   kErrBusy = -7,
   kErrUnsupportedPlatform = -8,
+  kErrPermission = -9,
 };
 
 class Engine : public EventSink {
@@ -322,6 +323,7 @@ class Engine : public EventSink {
   // iOS: moves the shared audio session to the profile for the current
   // capture state before the device starts. Device thread.
   void ApplySessionProfile(bool capture);
+  bool MicrophoneAllowed() const;
 };
 
 }  // namespace tsnx

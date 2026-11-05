@@ -2,6 +2,12 @@ import 'types.dart';
 
 bool get engineSupported => false;
 
+Future<MicrophonePermission> microphonePermission() =>
+    throw UnsupportedError('telosnex_audio is not available on this platform');
+
+Future<MicrophonePermission> requestMicrophonePermission() =>
+    throw UnsupportedError('telosnex_audio is not available on this platform');
+
 Future<AudioEngine> openEngine({
   required EngineDevice device,
   required AudioProcessingConfig processing,

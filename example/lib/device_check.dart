@@ -43,6 +43,8 @@ Future<void> main() async {
 }
 
 Future<void> run() async {
+  final permission = await TelosnexAudio.requestMicrophonePermission();
+  log('microphone permission: $permission');
   final engine = await TelosnexAudio.open();
   // Android: the plugin loads the library for JNI in the background, and
   // the engine reads the routes when it is ready.

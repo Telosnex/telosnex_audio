@@ -33,6 +33,9 @@ typedef struct tsnx_engine tsnx_engine;
 #define TSNX_ERR_UNSUPPORTED_FORMAT -5
 #define TSNX_ERR_QUEUE_FULL -6
 #define TSNX_ERR_UNSUPPORTED_PLATFORM -8
+// tsnx_capture_start: the app may not use the microphone (see
+// tsnx_mic_permission).
+#define TSNX_ERR_PERMISSION -9
 // Write results.
 #define TSNX_WRITE_FULL -101
 #define TSNX_WRITE_ENDED -102
@@ -98,6 +101,21 @@ typedef struct {
 } tsnx_capture_block;
 
 TSNX_EXPORT const char* tsnx_version(void);
+
+// Microphone permission. iOS, macOS: AVCaptureDevice's status for audio.
+// Android: RECORD_AUDIO; not granted reads as NOT_DETERMINED, and the
+// Android plugin shows the prompt (the request below cannot). Elsewhere:
+// GRANTED, as there is no per-app permission.
+#define TSNX_MIC_GRANTED 0
+#define TSNX_MIC_DENIED 1  // also restricted (Apple)
+#define TSNX_MIC_NOT_DETERMINED 2
+TSNX_EXPORT int32_t tsnx_mic_permission(void);  // leaf
+// iOS, macOS: shows the system prompt if the status is NOT_DETERMINED
+// (the app's Info.plist needs NSMicrophoneUsageDescription). Does not
+// block: the status after the answer goes to the Dart port `port` as an
+// int. Elsewhere, and when the status is known, posts the status at once.
+TSNX_EXPORT int32_t tsnx_mic_permission_request(int64_t port,
+                                                tsnx_post_cobject_fn post);
 
 // Open first closes the engines whose event port is closed (their isolate
 // is gone; see tsnx_engine_config). Their handles become invalid.

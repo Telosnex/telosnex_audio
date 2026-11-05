@@ -43,4 +43,14 @@ void main() {
     expect(t.state.position, const Duration(seconds: 2));
     expect(t.state.writtenFrames, 24000 * 3);
   });
+
+  // The Permissions API; a request only when it needs no prompt.
+  test('microphone permission', () async {
+    final status = await TelosnexAudio.microphonePermission();
+    if (status == MicrophonePermission.notDetermined) {
+      markTestSkipped('$status: a request would show the prompt');
+      return;
+    }
+    expect(await TelosnexAudio.requestMicrophonePermission(), status);
+  });
 }
