@@ -1,6 +1,7 @@
 # One job per desktop platform runs the native C++ tests and the platform
 # device (macOS: plain, ThreadSanitizer, an x86_64 compile, the virtual sound
-# device through CoreAudio and Apple voice processing; Linux x64 and arm64:
+# device through CoreAudio and Apple voice processing; macOS x64 natively,
+# without ThreadSanitizer; Linux x64 and arm64:
 # PulseAudio null sink, and ALSA on snd-aloop in a VM; Windows x64 and arm64,
 # and an arm64 cross compile: VB-CABLE, Core Audio), then the example app
 # (Dart API tests on the VM, the app build through the native-assets hook,
@@ -154,6 +155,49 @@ jobs:
           run=(flutter test integration_test/engine_test.dart -d "$DEVICE" -r expanded)
           if [[ "$RUNNER_OS" == Linux ]]; then run=(xvfb-run -a "${run[@]}"); fi
           "${run[@]}"
+
+  # The prebuilt macos-x64 library, natively on Intel. ThreadSanitizer and
+  # the symbol check stay in the ARM64 job.
+  desktop-macos-x64:
+    name: macOS x64
+    env:
+      PLATFORM: macos
+      CHECK: test -d build/macos/Build/Products/Debug/telosnex_audio_example.app/Contents/Frameworks/telosnex_audio.framework
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    steps:
+      - *checkout
+
+      - name: Install build tools
+        run: |
+          set -euo pipefail
+          command -v ninja || brew install ninja
+          cmake --version
+          ninja --version
+
+      - name: Build and run native tests
+        id: engine
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTSNX_BUILD_TESTS=ON
+          cmake --build build/test --target tsnx_tests
+          ./build/test/native_test/tsnx_tests
+
+      - name: Platform devices (CoreAudio, Apple voice processing)
+        if: ${{ !cancelled() && steps.engine.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/test -DTSNX_BUILD_PROBE=ON
+          cmake --build build/test --target echo_probe
+          for vp in "" --apple-vp; do
+            perl -e 'alarm shift; exec @ARGV' 60 ./build/test/echo_probe --routes $vp
+            perl -e 'alarm shift; exec @ARGV' 60 ./build/test/echo_probe $vp 3
+          done
+
+      - *setup_flutter
+      - *dart_api_tests
+      - *example_build
+      - *example_cases
 
   # Linux: both jobs share all their steps (YAML anchor).
   desktop-linux-x64:
