@@ -176,13 +176,13 @@ Future<File> _buildFromSource(
     if (ninja != null) ...['-G', 'Ninja', '-DCMAKE_MAKE_PROGRAM=$ninja'],
     if (os == OS.macOS) ...[
       '-DCMAKE_OSX_ARCHITECTURES=${arch == Architecture.arm64 ? 'arm64' : 'x86_64'}',
-      '-DCMAKE_OSX_DEPLOYMENT_TARGET=${code.macOS.targetVersion}',
+      '-DCMAKE_OSX_DEPLOYMENT_TARGET=${_appleVersion(code.macOS.deploymentVersion)}',
     ],
     if (os == OS.iOS) ...[
       '-DCMAKE_SYSTEM_NAME=iOS',
       '-DCMAKE_OSX_SYSROOT=${target.startsWith('iossim') ? 'iphonesimulator' : 'iphoneos'}',
       '-DCMAKE_OSX_ARCHITECTURES=${arch == Architecture.arm64 ? 'arm64' : 'x86_64'}',
-      '-DCMAKE_OSX_DEPLOYMENT_TARGET=${code.iOS.targetVersion}',
+      '-DCMAKE_OSX_DEPLOYMENT_TARGET=${_appleVersion(code.iOS.deploymentVersion)}',
     ],
     if (os == OS.android) ...[
       '-DCMAKE_TOOLCHAIN_FILE=${_androidNdk(input)}/build/cmake/android.toolchain.cmake',
@@ -364,3 +364,7 @@ Future<void> _run(
     throw ProcessException(exe, args, '${r.stdout}\n${r.stderr}', r.exitCode);
   }
 }
+
+/// An Apple deployment version as CMake takes it: `12.0`, or `12.3.1`.
+String _appleVersion(AppleVersion v) =>
+    '${v.major}.${v.minor}${v.patch == 0 ? '' : '.${v.patch}'}';
