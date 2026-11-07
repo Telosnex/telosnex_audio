@@ -1,7 +1,14 @@
-// Builds the top-level LICENSE that Flutter includes in its license registry.
+// Builds the top-level NOTICES and LICENSE files.
 // Usage: dart tool/licenses.dart [--check]
-// Keep upstream license text unchanged. Each section uses Flutter's package
-// names + blank line + text format, separated by 80 hyphens.
+//
+// NOTICES is the file that Flutter includes in its license registry: Flutter
+// reads a package's NOTICES in place of its LICENSE when it exists. It has
+// telosnex_audio's own license and every vendored notice. Keep upstream
+// license text unchanged. Each section uses Flutter's package names + blank
+// line + text format, separated by 80 hyphens.
+//
+// LICENSE has only telosnex_audio's own license, so that pub.dev can
+// identify it.
 import 'dart:io';
 
 const licenseSources = <String, String>{
@@ -42,7 +49,7 @@ String bundledLicenses(Directory root) {
     throw StateError('Unlisted upstream notices: ${missing.join(', ')}');
   }
   // Telosnex's own code first.
-  final sections = <String>['telosnex_audio\n\n$_ownLicense'];
+  final sections = <String>['telosnex_audio\n\n$ownLicense'];
   for (final entry in licenseSources.entries) {
     var text = File('${root.path}/${entry.key}').readAsStringSync();
     // Sonic's license file has only the Apache terms. Its source headers
@@ -62,19 +69,21 @@ void main(List<String> args) {
     return;
   }
   final root = File.fromUri(Platform.script).parent.parent;
-  final license = File('${root.path}/LICENSE');
-  final expected = bundledLicenses(root);
-  if (args.contains('--check')) {
-    if (!license.existsSync() || license.readAsStringSync() != expected) {
-      stderr.writeln('LICENSE is stale. Run dart tool/licenses.dart.');
-      exitCode = 1;
+  final expected = {'NOTICES': bundledLicenses(root), 'LICENSE': ownLicense};
+  for (final MapEntry(key: name, value: text) in expected.entries) {
+    final file = File('${root.path}/$name');
+    if (args.contains('--check')) {
+      if (!file.existsSync() || file.readAsStringSync() != text) {
+        stderr.writeln('$name is stale. Run dart tool/licenses.dart.');
+        exitCode = 1;
+      }
+    } else {
+      file.writeAsStringSync(text);
     }
-  } else {
-    license.writeAsStringSync(expected);
   }
 }
 
-const _ownLicense = '''MIT License
+const ownLicense = '''MIT License
 
 Copyright (c) 2026 Telosnex Inc.
 

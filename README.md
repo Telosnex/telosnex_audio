@@ -71,4 +71,4 @@ AudioWorklet with WebAssembly.
 ## License
 
 MIT. The bundled code keeps its own licenses (WebRTC, Abseil, minimp3,
-Sonic), all in LICENSE.
+Sonic), all in NOTICES. Flutter shows NOTICES on the app's license page.

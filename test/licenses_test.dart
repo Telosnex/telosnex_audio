@@ -8,7 +8,7 @@ void main() {
   final root = Directory.current;
   test('Flutter license file includes every vendored license verbatim', () {
     final bundle = bundledLicenses(root);
-    expect(File('${root.path}/LICENSE').readAsStringSync(), bundle);
+    expect(File('${root.path}/NOTICES').readAsStringSync(), bundle);
     final sections = bundle.split('\n${'-' * 80}\n');
     // Telosnex's own section, then one per bundled source.
     expect(sections, hasLength(licenseSources.length + 1));
@@ -22,6 +22,10 @@ void main() {
     }
     expect(bundle, contains('Copyright 2010 Bill Cox'));
     expect(bundle, contains('Additional IP Rights Grant (Patents)'));
+  });
+
+  test('LICENSE has only the package license', () {
+    expect(File('${root.path}/LICENSE').readAsStringSync(), ownLicense);
   });
 
   test('new vendored notices cannot be omitted', () {
