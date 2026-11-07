@@ -1,3 +1,8 @@
+## 0.1.3
+
+- Requires `code_assets` 2.2, `hooks` 2.2 and `kiln` 0.2. With `code_assets` 1.x, the package could not be installed with current `objective_c` and `shared_preferences_foundation`.
+- The build uses the complete iOS and macOS deployment version, such as 12.3, not only the major version.
+
 ## 0.1.2
 
 - `TelosnexAudio.microphonePermission()` and
