@@ -1,3 +1,7 @@
+## 1.0.0
+
+- First stable release. Requires kiln 1.0.0, whose source key leaves out the pubspec's `version` and `description`, so a release that changes only those needs no new native build.
+
 ## 0.1.4
 
 - `LICENSE` has only telosnex_audio's MIT license. The notices of the bundled code are in `NOTICES`, which Flutter reads in place of `LICENSE`, so the app's license page still shows all of them.
