@@ -1,9 +1,9 @@
 name: telosnex_audio
 description: >-
-  Audio engine for Flutter: microphone capture with WebRTC echo
-  cancellation, and a mixer of playback tracks you can seek and speed up.
-  Android, iOS, macOS, Linux, Windows and the web.
-version: 0.1.3
+  Audio engine for Flutter: microphone capture with WebRTC echo cancellation,
+  and a mixer of playback tracks you can seek and speed up. Android, iOS,
+  macOS, Linux, Windows, web.
+version: 0.1.4
 repository: https://github.com/Telosnex/telosnex_audio
 issue_tracker: https://github.com/Telosnex/telosnex_audio/issues
 

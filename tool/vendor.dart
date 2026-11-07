@@ -32,7 +32,7 @@
 //   third_party/sonic/**, third_party/minimp3/**
 //   cmake/webrtc_sources.cmake     source lists per group
 //   third_party/VENDOR.json        pins and file counts
-//   LICENSE                       Flutter license registry notices
+//   NOTICES, LICENSE              Flutter license registry notices
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -229,8 +229,9 @@ Future<void> main(List<String> args) async {
     '$root/third_party/VENDOR.json',
   ).writeAsStringSync('${const JsonEncoder.withIndent('  ').convert(pins)}\n');
   File(
-    '$root/LICENSE',
+    '$root/NOTICES',
   ).writeAsStringSync(licenses.bundledLicenses(Directory(root)));
+  File('$root/LICENSE').writeAsStringSync(licenses.ownLicense);
 
   stdout.writeln(
     'webrtc: ${files.length} files, ${unresolved.length} unresolved includes (system or excluded).',

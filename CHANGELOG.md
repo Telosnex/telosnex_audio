@@ -1,3 +1,8 @@
+## 0.1.4
+
+- `LICENSE` has only telosnex_audio's MIT license. The notices of the bundled code are in `NOTICES`, which Flutter reads in place of `LICENSE`, so the app's license page still shows all of them.
+- Shorter package description.
+
 ## 0.1.3
 
 - Requires `code_assets` 2.2, `hooks` 2.2 and `kiln` 0.2. With `code_assets` 1.x, the package could not be installed with current `objective_c` and `shared_preferences_foundation`.

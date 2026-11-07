@@ -12,3 +12,5 @@ tool/vendor_manifest.json
 tool/web_check.dart
 tool/kiln/test_web.dart
 tool/kiln/test_build.dart
+# Flutter license notices, like LICENSE.
+NOTICES
