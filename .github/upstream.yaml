@@ -1,5 +1,7 @@
 # Upstream sources, checked daily by the Upstream watch workflow
 # (telosnex_ci_tools, lib/src/upstream.dart). VENDORING.md has the details.
 sources:
-  - name: WebRTC, Chromium third_party, Sonic, minimp3
+  # webrtc-sdk/webrtc, waywardgeek/sonic and lieff/minimp3. The script also
+  # checks that the Chromium third_party pin is the one WebRTC's DEPS names.
+  - name: 3 upstreams
     run: dart .github/vendor_watch.dart
