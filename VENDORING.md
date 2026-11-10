@@ -40,13 +40,13 @@ removes these changes from the working tree.
 
 | Commit | Change |
 |---|---|
-| `e8b9876` | Hardware clock observations through `AudioTransport` |
-| `f9e003a` | No GCC-style ARM assembly in the denormal disabler under MSVC |
-| `b5e8e7c` | No vector subscripts in the AVX2 matched filter (MSVC) |
-| `55b376a` | ALSA: 10 ms capture period with a 1 s ring |
-| `817520b` | ALSA: hardware clock observations |
-| `e7515ba` | macOS: start voice-processing capture once and sooner |
-| `bb2901e` | `RtpPacketInfo` `operator==` defaulted in the class (MSVC) |
+| `a70eb05` | Hardware clock observations through `AudioTransport` |
+| `04e1cf0` | No GCC-style ARM assembly in the denormal disabler under MSVC |
+| `6a3e2c9` | No vector subscripts in the AVX2 matched filter (MSVC) |
+| `f8528a6` | ALSA: 10 ms capture period with a 1 s ring |
+| `d593c0e` | ALSA: hardware clock observations |
+| `38896c5` | macOS: start voice-processing capture once and sooner |
+| `1d535e5` | `RtpPacketInfo` `operator==` defaulted in the class (MSVC) |
 
 When you add a local patch, add it to this table. Merge a vendor pull
 request with a merge commit, not a squash: a squash puts all patches into
