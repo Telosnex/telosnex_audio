@@ -1,3 +1,7 @@
+## 1.0.1
+
+- Vendored WebRTC at m150_release 83af826464, which adds `RtpParameters::fec_protection`. telosnex_audio does not use it; the native libraries are rebuilt from the new source.
+
 ## 1.0.0
 
 - First stable release. Requires kiln 1.0.0, whose source key leaves out the pubspec's `version` and `description`, so a release that changes only those needs no new native build.
