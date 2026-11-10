@@ -74,4 +74,6 @@ RtpPacketInfo::RtpPacketInfo(const RTPHeader& rtp_header,
   absolute_capture_time_ = extension.absolute_capture_time;
 }
 
+bool operator==(const RtpPacketInfo& lhs, const RtpPacketInfo& rhs) = default;
+
 }  // namespace webrtc
