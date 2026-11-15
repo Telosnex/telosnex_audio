@@ -1,6 +1,6 @@
 ## 1.0.2
 
-- Vendored minimp3 at 19ff674. It fixes undefined behaviour, overflows and reads of uninitialized memory in MP3 parsing and decoding, including two security fixes. The native libraries are rebuilt from the new source.
+- Vendored minimp3 at a2ad968. It fixes undefined behaviour, overflows and reads of uninitialized memory in MP3 parsing and decoding, including two security fixes. The native libraries are rebuilt from the new source.
 
 ## 1.0.1
 
