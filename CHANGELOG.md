@@ -1,3 +1,7 @@
+## 1.0.2
+
+- Vendored minimp3 at 19ff674. It fixes undefined behaviour, overflows and reads of uninitialized memory in MP3 parsing and decoding, including two security fixes. The native libraries are rebuilt from the new source.
+
 ## 1.0.1
 
 - Vendored WebRTC at m150_release 83af826464, which adds `RtpParameters::fec_protection`. telosnex_audio does not use it; the native libraries are rebuilt from the new source.
