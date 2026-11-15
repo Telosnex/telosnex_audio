@@ -8,7 +8,12 @@ on:
     - cron: '23 7 * * *'
   push:
     branches: [main]
-    paths: [.github/upstream.yaml]
+    # Also the files that set the pins, so a vendor update re-checks them.
+    paths:
+      - .github/upstream.yaml
+      - .github/vendor_watch.dart
+      - .github/workflows/upstream_watch.yml
+      - tool/vendor_manifest.json
   workflow_dispatch:
 
 permissions:
