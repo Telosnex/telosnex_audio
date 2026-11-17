@@ -1649,6 +1649,29 @@ void AudioEngineDevice::ReconfigureEngine() {
     // Re-configure is only for device mode
     if (current_state.render_mode != RenderMode::Device) return;
 
+    // Telosnex: first start the same engine again. On macOS, voice processing
+    // changes the input hardware format just after the engine starts, which
+    // stops the engine. A new engine causes the same change, so recreating
+    // the engine repeats it every ~2 s and capture never delivers audio. The
+    // same engine starts again and keeps running.
+    if (engine_device_ != nil && current_state.IsAnyRunning()) {
+      if (engine_device_.running) return;
+      NSError* error = nil;
+      BOOL restarted = NO;
+      @try {
+        restarted = [engine_device_ startAndReturnError:&error];
+      } @catch (NSException* exception) {
+        LOGW() << "ReconfigureEngine: restart threw: " << exception.reason.UTF8String;
+      }
+      if (restarted) {
+        LOGI() << "ReconfigureEngine: restarted the same engine";
+        return;
+      }
+      LOGW() << "ReconfigureEngine: restart failed ("
+             << (error != nil ? error.localizedDescription.UTF8String : "no error")
+             << "), recreating the engine";
+    }
+
     EngineState shutdown_state = this->engine_state_;
     shutdown_state.input_enabled = false;
     shutdown_state.input_running = false;
