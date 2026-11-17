@@ -47,6 +47,7 @@ removes these changes from the working tree.
 | `d593c0e` | ALSA: hardware clock observations |
 | `38896c5` | macOS: start voice-processing capture once and sooner |
 | `1d535e5` | `RtpPacketInfo` `operator==` defaulted in the class (MSVC) |
+| `10cd366` | macOS: restart the same engine after a voice-processing format change |
 
 When you add a local patch, add it to this table. Merge a vendor pull
 request with a merge commit, not a squash: a squash puts all patches into
