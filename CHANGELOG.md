@@ -1,3 +1,8 @@
+## 1.0.4
+
+- iOS: WebRTC `m150_release` at 4de68c8. Audio capture recovers after interruptions and media-services resets, and does not restart an engine that is already running. The native libraries are rebuilt from the new source.
+- Vendored minimp3 at 1428237. It fixes decoding of very short MP3 files and the end-of-stream check for ID3v1 tags.
+
 ## 1.0.3
 
 - macOS: capture with Apple voice processing delivers audio. The format change that voice processing causes after the engine starts made a new engine, which caused the change again, every ~2 s. The same engine now starts again. The native libraries are rebuilt from the new source.
