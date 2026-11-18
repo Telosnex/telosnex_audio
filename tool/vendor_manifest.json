@@ -543,7 +543,7 @@
   },
   "minimp3": {
     "url": "https://github.com/lieff/minimp3.git",
-    "commit": "a2ad968c94819fb98589cca8026e0a57958c963c",
+    "commit": "142823796ab8efa55e1bf11406028f3be77ecceb",
     "files": [
       "minimp3.h",
       "minimp3_ex.h",
