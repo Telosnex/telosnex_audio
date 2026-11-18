@@ -17,7 +17,7 @@ import 'dart:js_interop';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:telosnex_audio/telosnex_audio.dart';
 import 'package:telosnex_audio/web_testing.dart';
 import 'package:web/web.dart' as web;

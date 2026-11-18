@@ -4,11 +4,12 @@ publish_to: none
 version: 0.1.0
 
 environment:
-  sdk: ^3.10.0
+  sdk: ^3.13.0
 
 dependencies:
   flutter:
     sdk: flutter
+  material_ui: ^1.9.0
   telosnex_audio:
     path: ..
   web: ^1.1.0

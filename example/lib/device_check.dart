@@ -9,8 +9,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:telosnex_audio/telosnex_audio.dart';
 
 // debugPrint reaches logcat on Android and the console on iOS.
