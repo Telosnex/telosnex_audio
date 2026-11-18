@@ -1,18 +1,18 @@
 {
   "schema": 1,
-  "sourceKey": "f4575347422f653ea5618507c8b74f68f697f0dc7a765ff36e51e32d11a006b6",
-  "release": "https://github.com/Telosnex/telosnex_audio/releases/tag/native-f4575347422f653e",
+  "sourceKey": "23cc1205d5d84c0f905f9b81e2e4c41dee99b2c284115a2d29ded0ccdb82c1c7",
+  "release": "https://github.com/Telosnex/telosnex_audio/releases/tag/native-23cc1205d5d84c0f",
   "runner": "ubuntu-24.04, emscripten/emsdk@sha256:67df07bc59f86685818fa801d340b54e576fe4276cfd3bcfc4da61d564217737",
   "toolchain": "Emscripten 5.0.0 (a7c5deabd7c88ba1c38ebe988112256775f944c6)",
-  "webVersion": "af3af293be6096c5",
+  "webVersion": "1bf032cab21613c9",
   "files": [
     {
       "name": "telosnex_audio.wasm",
-      "sha256": "26db3314b987c0b6759264a429d7728c5b6c31b95b8a4bf58397435307610f37",
-      "bytes": 90807,
+      "sha256": "c5cadbee73003de172d7a05ae80a85b2ea71d31a0212ace864bc15833f8d6915",
+      "bytes": 90875,
       "source": "release",
-      "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-f4575347422f653e/web-telosnex_audio.wasm.gz",
-      "downloadSha256": "b6725b2f58a3ea4d43b1b12f2754fc17decaee8db70ecf41300139a4284a803c"
+      "url": "https://github.com/Telosnex/telosnex_audio/releases/download/native-23cc1205d5d84c0f/web-telosnex_audio.wasm.gz",
+      "downloadSha256": "0268deda2effb847cc001c6fbc4ba1433139fdd9f8d7385eba2ca1acc5cef086"
     },
     {
       "name": "telosnex_audio_storage.js",
