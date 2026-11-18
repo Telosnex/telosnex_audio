@@ -1,7 +1,7 @@
 {
   "webrtc": {
     "url": "https://github.com/webrtc-sdk/webrtc.git",
-    "commit": "83af826464a3212bf452fcb3a8d0619e7d77a368",
+    "commit": "4de68c8241d1c04d866aa1efd64f0be71317ad79",
     "third_party_commit": "7c92732938de0ef7e28f5da231994723f938f407",
     "files": 1190
   },
