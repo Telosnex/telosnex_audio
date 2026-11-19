@@ -1,3 +1,7 @@
+## 1.0.6
+
+- Fix WebRTC audio-session interruption handling on iOS 13 and tvOS.
+
 ## 1.0.5
 
 - Flutter 3.50 compatability
