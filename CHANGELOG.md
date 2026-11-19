@@ -1,3 +1,7 @@
+## 1.0.5
+
+- Flutter 3.50 compatability
+
 ## 1.0.4
 
 - iOS: WebRTC `m150_release` at 4de68c8. Audio capture recovers after interruptions and media-services resets, and does not restart an engine that is already running. The native libraries are rebuilt from the new source.
