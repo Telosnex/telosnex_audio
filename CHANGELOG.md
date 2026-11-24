@@ -1,3 +1,7 @@
+## 1.0.7
+
+- Update minimp3: initialize the free-format frame size when detecting MP3 streams, and narrow an old GCC warning workaround.
+
 ## 1.0.6
 
 - Fix WebRTC audio-session interruption handling on iOS 13 and tvOS.
